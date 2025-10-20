@@ -5,7 +5,7 @@
 
 int main()
 {
-	int fd = open("data/accounts.data",O_RDWR | O_CREAT,06444);
+	int fd = open("data/accounts.dat",O_RDWR | O_CREAT,06444);
 	if(fd < 0)
 	{
 		perror("open");

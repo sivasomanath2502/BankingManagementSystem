@@ -1,7 +1,8 @@
-Customer 1001 - Deposit 1500.00
-Customer 1001 - Withdraw 500.00
-Customer 1001 - Transfer 1000.00
-Customer 1001 - Deposit 1000.00
-Customer 1001 - Withdraw 500.00
-Customer 1001 - Transfer 1.00
-Customer 1002 - Received 1.00
+1003:Deposit:10000.00:2025-10-27 22:43:07
+1001:Deposit:1000.00:2025-10-27 23:11:20
+1001:Deposit:501.00:Tue Oct 28 14:08:10 2025
+1001:Withdraw:3000.00:Tue Oct 28 14:08:15 2025
+1001:TransferOut:2500.00:Tue Oct 28 14:08:23 2025
+1003:TransferIn:2500.00:Tue Oct 28 14:08:23 2025
+1001:Deposit:5000.00:Tue Oct 28 14:22:14 2025
+1001:Withdraw:10.00:Tue Oct 28 14:24:33 2025

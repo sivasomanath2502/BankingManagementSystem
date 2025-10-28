@@ -2,282 +2,316 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 #include <pthread.h>
-#include <fcntl.h>
+#include <arpa/inet.h>
 #include <signal.h>
 #include "../include/bank_ops.h"
 
 #define PORT 8080
-#define MAX_USERS 50
+#define MAX_USERS 100
 
+typedef struct {
+    int userID;
+    int active;
+} Session;
 
+Session sessions[MAX_USERS];
+pthread_mutex_t session_lock = PTHREAD_MUTEX_INITIALIZER;
+
+int server_running = 1;
 int server_fd;
-int active_users[MAX_USERS] = {0};
 
-
-void *handle_client(void *arg);
-int validate_user(const char *id, const char *pwd, char *role);
-int is_user_logged_in(int id);
-void set_user_login(int id, int status);
-void handle_shutdown(int sig);
-void *console_handler(void *arg);
-
-void handle_shutdown(int sig) {
-    printf("\nCaught signal %d — shutting down server...\n", sig);
-
-    
+int is_user_logged_in(int userID) {
+    pthread_mutex_lock(&session_lock);
     for (int i = 0; i < MAX_USERS; i++) {
-        if (active_users[i] != 0)
-            active_users[i] = 0;
+        if (sessions[i].active && sessions[i].userID == userID) {
+            pthread_mutex_unlock(&session_lock);
+            return 1;
+        }
     }
+    pthread_mutex_unlock(&session_lock);
+    return 0;
+}
 
-    if (server_fd > 0)
-        close(server_fd);
+void add_session(int userID) {
+    pthread_mutex_lock(&session_lock);
+    for (int i = 0; i < MAX_USERS; i++) {
+        if (!sessions[i].active) {
+            sessions[i].active = 1;
+            sessions[i].userID = userID;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&session_lock);
+}
 
-    printf("All sessions cleared. Server stopped safely.\n");
-    fflush(stdout);
+void remove_session(int userID) {
+    pthread_mutex_lock(&session_lock);
+    for (int i = 0; i < MAX_USERS; i++) {
+        if (sessions[i].active && sessions[i].userID == userID) {
+            sessions[i].active = 0;
+            sessions[i].userID = 0;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&session_lock);
+}
+
+void *server_command_listener(void *arg) {
+    char cmd[32];
+    while (1) {
+        printf("> ");
+        fflush(stdout);
+        if (fgets(cmd, sizeof(cmd), stdin)) {
+            cmd[strcspn(cmd, "\n")] = 0;
+            if (strcasecmp(cmd, "exit") == 0) {
+                server_running = 0;
+                printf("🛑 Server shutting down...\n");
+                shutdown(server_fd, SHUT_RDWR);
+                close(server_fd);
+                break;
+            }
+        }
+    }
+    return NULL;
+}
+
+void handle_sigint(int sig) {
+    printf("\n🛑 Caught Ctrl+C. Shutting down server...\n");
+    server_running = 0;
+    shutdown(server_fd, SHUT_RDWR);
+    close(server_fd);
     exit(0);
 }
-
-
-int main() {
-    int new_socket;
-    struct sockaddr_in address;
-    int opt = 1;
-    int addrlen = sizeof(address);
-
-    signal(SIGINT, handle_shutdown);
-    signal(SIGTERM, handle_shutdown);
-
-    
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) {
-        perror("Socket creation failed");
-        exit(EXIT_FAILURE);
-    }
-
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
-
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        perror("Bind failed");
-        exit(EXIT_FAILURE);
-    }
-
-    if (listen(server_fd, 5) < 0) {
-        perror("Listen failed");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Server started on port %d\n", PORT);
-    fflush(stdout);
-	
-    pthread_t console_thread;
-    pthread_create(&console_thread, NULL, console_handler, NULL);
-    pthread_detach(console_thread);
-    
-    while (1) {
-        new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
-        if (new_socket < 0) {
-            perror("Accept failed");
-            continue;
-        }
-
-        printf("Client connected: %s:%d\n",
-               inet_ntoa(address.sin_addr), ntohs(address.sin_port));
-        fflush(stdout);
-
-        pthread_t tid;
-        int *client_sock = malloc(sizeof(int));
-        *client_sock = new_socket;
-        pthread_create(&tid, NULL, handle_client, client_sock);
-        pthread_detach(tid);
-    }
-}
-
 
 void *handle_client(void *arg) {
     int sock = *(int *)arg;
     free(arg);
 
     char id[32], pwd[32], role[32];
-    int custID, choice, status;
-    double amt, balance;
-    char buf[1024];
+    int choice, status;
+    char buf[4096];
+    double amount;
 
+    read(sock, id, sizeof(id));
+    read(sock, pwd, sizeof(pwd));
 
-    if (read(sock, id, sizeof(id)) <= 0 || read(sock, pwd, sizeof(pwd)) <= 0) {
+    if (!validate_user(id, pwd, role)) {
+        write(sock, "Invalid", sizeof("Invalid"));
         close(sock);
         return NULL;
     }
 
-    custID = atoi(id);
-
-
-    if (is_user_logged_in(custID)) {
-        write(sock, "SESSION_ACTIVE", 15);
-        close(sock);
-        return NULL;
-    }
-
-
-    if (validate_user(id, pwd, role)) {
+    int userID = atoi(id);
+    if (is_user_logged_in(userID)) {
+        strcpy(role, "AlreadyLoggedIn");
         write(sock, role, sizeof(role));
-    } else {
-        write(sock, "INVALID", 8);
+        printf("⚠️ Duplicate login attempt for %d\n", userID);
         close(sock);
         return NULL;
     }
 
-    if (strcmp(role, "Customer") == 0)
-        set_user_login(custID, 1);
+    add_session(userID);
+    write(sock, role, sizeof(role));
+    printf("✅ %s logged in (ID=%d)\n", role, userID);
 
-    printf("User %d logged in.\n", custID);
-    fflush(stdout);
-
-    while (1) {
-        ssize_t n = read(sock, &choice, sizeof(choice));
-        if (n <= 0) break;
-
-        if (choice == 9 || choice == 10) break; 
-
-        switch (choice) {
-            case 1: 
-                if (view_balance(custID, &balance) == 0)
-                    write(sock, &balance, sizeof(balance));
-                else {
-                    balance = -1;
-                    write(sock, &balance, sizeof(balance));
+    // ---------------- CUSTOMER ----------------
+    if (strcmp(role, "Customer") == 0) {
+        while (read(sock, &choice, sizeof(choice)) > 0) {
+            switch (choice) {
+                case 1: { // View Balance
+                    double bal;
+                    view_balance(userID, &bal);
+                    snprintf(buf, sizeof(buf), "Balance: %.2f", bal);
+                    write(sock, buf, strlen(buf) + 1);
+                    break;
                 }
-                break;
-
-            case 2:
-                read(sock, &amt, sizeof(amt));
-                status = update_balance(custID, amt, 1);
-                write(sock, &status, sizeof(status));
-                if (status == 0)
-                    record_transaction(custID, "Deposit", amt);
-                break;
-
-            case 3:
-                read(sock, &amt, sizeof(amt));
-                status = update_balance(custID, amt, 0);
-                write(sock, &status, sizeof(status));
-                if (status == 0)
-                    record_transaction(custID, "Withdraw", amt);
-                break;
-
-            case 4: { 
-                int targetID;
-                read(sock, &targetID, sizeof(targetID));
-                read(sock, &amt, sizeof(amt));
-                status = update_balance(custID, amt, 0);
-                if (status == 0 && update_balance(targetID, amt, 1) == 0) {
-                    record_transaction(custID, "Transfer", amt);
-                    record_transaction(targetID, "Received", amt);
-                    status = 0;
-                } else {
-                    update_balance(custID, amt, 1); 
-                    status = -1;
+                case 2: { // Deposit
+                    read(sock, &amount, sizeof(amount));
+                    update_balance(userID, amount, 1);
+                    record_transaction(userID, "Deposit", amount);
+                    write(sock, "Deposit successful.", 20);
+                    break;
                 }
-                write(sock, &status, sizeof(status));
-                break;
+                case 3: { // Withdraw
+                    read(sock, &amount, sizeof(amount));
+                    double bal;
+                    view_balance(userID, &bal);
+                    if (amount > bal)
+                        write(sock, "Insufficient balance.", 22);
+                    else {
+                        update_balance(userID, amount, 0);
+                        record_transaction(userID, "Withdraw", amount);
+                        write(sock, "Withdrawal successful.", 23);
+                    }
+                    break;
+                }
+                case 4: { // Transfer
+                    int target;
+                    read(sock, &target, sizeof(target));
+                    read(sock, &amount, sizeof(amount));
+                    double bal;
+                    view_balance(userID, &bal);
+                    if (amount > bal)
+                        write(sock, "Insufficient balance.", 22);
+                    else {
+                        update_balance(userID, amount, 0);
+                        update_balance(target, amount, 1);
+                        record_transaction(userID, "TransferOut", amount);
+                        record_transaction(target, "TransferIn", amount);
+                        write(sock, "Transfer successful.", 21);
+                    }
+                    break;
+                }
+                case 5: { // Loan
+                    read(sock, &amount, sizeof(amount));
+                    apply_loan(userID, amount);
+                    write(sock, "Loan applied successfully.", 27);
+                    break;
+                }
+                case 6: { // Change Password
+                    char newpwd[64];
+                    read(sock, newpwd, sizeof(newpwd));
+                    change_password(userID, newpwd);
+                    write(sock, "Password changed successfully.", 31);
+                    break;
+                }
+                case 7: { // Feedback
+                    char feedback[256];
+                    read(sock, feedback, sizeof(feedback));
+                    add_feedback(userID, feedback);
+                    write(sock, "Feedback added.", 16);
+                    break;
+                }
+                case 8: { // Transactions
+                    view_transaction_history(userID, buf, sizeof(buf));
+                    write(sock, buf, strlen(buf) + 1);
+                    break;
+                }
+                case 9: // Logout
+                    printf("👋 Customer %d logged out.\n", userID);
+                    remove_session(userID);
+                    close(sock);
+                    return NULL;
+                case 10: // Exit
+                    printf("👋 Customer %d exited.\n", userID);
+                    remove_session(userID);
+                    close(sock);
+                    return NULL;
             }
-
-            case 5:
-                read(sock, &amt, sizeof(amt));
-                status = apply_loan(custID, amt);
-                write(sock, &status, sizeof(status));
-                break;
-
-            case 6: { 
-                char newpwd[32];
-                read(sock, newpwd, sizeof(newpwd));
-                status = change_password(custID, newpwd);
-                write(sock, &status, sizeof(status));
-                break;
-            }
-
-            case 7: 
-                read(sock, buf, sizeof(buf));
-                status = add_feedback(custID, buf);
-                write(sock, &status, sizeof(status));
-                break;
-
-            case 8: 
-                memset(buf, 0, sizeof(buf));
-                if (view_transaction_history(custID, buf, sizeof(buf)) == 0)
-                    write(sock, buf, sizeof(buf));
-                else
-                    write(sock, "No transactions found.\n", 24);
-                break;
-
-            default:
-                printf("Unknown request from user %d\n", custID);
-                break;
         }
     }
 
-    printf("User %d logged out.\n", custID);
-    set_user_login(custID, 0);
+   // ---------------- EMPLOYEE ----------------
+    else if (strcmp(role, "Employee") == 0) {
+        while (read(sock, &choice, sizeof(choice)) > 0) {
+            switch (choice) {
+                case 1: { // Add New Customer
+                    char pwd[64];
+                    read(sock, pwd, sizeof(pwd));
+
+                    int newID = add_new_customer(pwd);
+                    if (newID > 0)
+                        snprintf(buf, sizeof(buf), "✅ Customer %d added (default balance: ₹0.00)", newID);
+                    else if (newID == -2)
+                        snprintf(buf, sizeof(buf), "❌ Password too short. Minimum 3 characters required.");
+                    else
+                        snprintf(buf, sizeof(buf), "❌ Failed to add customer. Try again.");
+
+                    write(sock, buf, strlen(buf) + 1);
+                    break;
+                }
+
+                case 2: { // Modify Customer Password
+                    int cid;
+                    char newpwd[64];
+                    read(sock, &cid, sizeof(cid));
+                    read(sock, newpwd, sizeof(newpwd));
+                    status = modify_customer_password(cid, newpwd);
+                    write(sock, status == 0 ? "✅ Password updated." : "❌ Update failed.", 22);
+                    break;
+                }
+                case 3: // View Assigned Loans
+                    view_loans(userID, buf, sizeof(buf));
+                    write(sock, buf, strlen(buf) + 1);
+                    break;
+                case 4: { // Approve/Reject Loan
+                    int cid;
+                    char st[32];
+                    read(sock, &cid, sizeof(cid));
+                    read(sock, st, sizeof(st));
+                    status = update_loan_status(cid, st);
+                    write(sock, status == 0 ? "✅ Loan status updated." : "❌ Update failed.", 25);
+                    break;
+                }
+                case 5: // View Customer Feedbacks
+                    view_feedbacks(buf, sizeof(buf));
+                    write(sock, buf, strlen(buf) + 1);
+                    break;
+                case 6: { // View Customer Transactions
+                    int custID;
+                    read(sock, &custID, sizeof(custID));
+
+                    view_transaction_history(custID, buf, sizeof(buf));
+                    write(sock, buf, strlen(buf) + 1);
+                    break;
+                }   
+                case 7:
+                    printf("👋 Employee %d logged out.\n", userID);
+                    remove_session(userID);
+                    close(sock);
+                    return NULL;
+                case 8:
+                    printf("👋 Employee %d exited.\n", userID);
+                    remove_session(userID);
+                    close(sock);
+                    return NULL;
+            }
+        }
+    }
+
+
+    remove_session(userID);
     close(sock);
     return NULL;
 }
 
-int validate_user(const char *id, const char *pwd, char *role) {
-    FILE *fp = fopen("data/users.dat", "r");
-    if (!fp) return 0;
+int main() {
+    struct sockaddr_in addr;
+    socklen_t addrlen = sizeof(addr);
 
-    char uid[32], upwd[32], urole[32];
-    while (fscanf(fp, "%[^:]:%[^:]:%s\n", uid, upwd, urole) == 3) {
-        if (!strcmp(id, uid) && !strcmp(pwd, upwd)) {
-            strcpy(role, urole);
-            fclose(fp);
-            return 1;
+    signal(SIGINT, handle_sigint);
+
+    server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int opt = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(PORT);
+
+    bind(server_fd, (struct sockaddr*)&addr, sizeof(addr));
+    listen(server_fd, 5);
+
+    printf("🚀 Server started on port %d\n", PORT);
+    pthread_t cmd_thread;
+    pthread_create(&cmd_thread, NULL, server_command_listener, NULL);
+
+    while (server_running) {
+        int client_sock = accept(server_fd, (struct sockaddr*)&addr, &addrlen);
+        if (client_sock < 0) {
+            if (!server_running) break;
+            continue;
         }
+        printf("🔗 Client connected.\n");
+        int *new_sock = malloc(sizeof(int));
+        *new_sock = client_sock;
+        pthread_t tid;
+        pthread_create(&tid, NULL, handle_client, new_sock);
+        pthread_detach(tid);
     }
-    fclose(fp);
+
+    printf("✅ Server stopped.\n");
     return 0;
-}
-
-int is_user_logged_in(int id) {
-    for (int i = 0; i < MAX_USERS; i++) {
-        if (active_users[i] == id)
-            return 1;
-    }
-    return 0;
-}
-
-void set_user_login(int id, int status) {
-    for (int i = 0; i < MAX_USERS; i++) {
-        if (status == 1 && active_users[i] == 0) {
-            active_users[i] = id;
-            break;
-        } else if (status == 0 && active_users[i] == id) {
-            active_users[i] = 0;
-            break;
-        }
-    }
-}
-
-void *console_handler(void *arg) {
-    char cmd[16];
-    while (1) {
-        if (fgets(cmd, sizeof(cmd), stdin)) {
-            cmd[strcspn(cmd, "\n")] = 0;
-            if (strcmp(cmd, "exit") == 0) {
-                printf("Exit command received.\n");
-                handle_shutdown(SIGINT);
-            } else if (strlen(cmd) > 0) {
-                printf("Unknown command: %s (type 'exit' to stop server)\n", cmd);
-                fflush(stdout);
-            }
-        }
-    }
-    return NULL;
 }
 

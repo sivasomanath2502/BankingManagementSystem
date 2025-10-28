@@ -265,6 +265,72 @@ void manager_menu(int sock) {
     }
 }
 
+void admin_menu(int sock) {
+    int choice, userID;
+    char buffer[4096], newpwd[64], newrole[32];
+
+    while (1) {
+        printf("\n--- Admin Menu ---\n"
+               "1. Add New Bank Employee\n"
+               "2. Modify Customer/Employee Details\n"
+               "3. Manage User Roles\n"
+               "4. Change Password\n"
+               "5. Logout\n"
+               "6. Exit\n"
+               "Enter choice: ");
+        scanf("%d", &choice);
+        write(sock, &choice, sizeof(choice));
+
+        switch (choice) {
+            case 1:
+                printf("Enter new employee password: ");
+                scanf("%s", newpwd);
+                write(sock, newpwd, sizeof(newpwd));
+                read(sock, buffer, sizeof(buffer));
+                printf("%s\n", buffer);
+                break;
+
+            case 2:
+                printf("Enter User ID to modify: ");
+                scanf("%d", &userID);
+                printf("Enter new password: ");
+                scanf("%s", newpwd);
+                write(sock, &userID, sizeof(userID));
+                write(sock, newpwd, sizeof(newpwd));
+                read(sock, buffer, sizeof(buffer));
+                printf("%s\n", buffer);
+                break;
+
+            case 3:
+                printf("Enter User ID to change role: ");
+                scanf("%d", &userID);
+                printf("Enter new role (Employee/Manager): ");
+                scanf("%s", newrole);
+                write(sock, &userID, sizeof(userID));
+                write(sock, newrole, sizeof(newrole));
+                read(sock, buffer, sizeof(buffer));
+                printf("%s\n", buffer);
+                break;
+
+            case 4:
+                printf("Enter new admin password: ");
+                scanf("%s", newpwd);
+                write(sock, newpwd, sizeof(newpwd));
+                read(sock, buffer, sizeof(buffer));
+                printf("%s\n", buffer);
+                break;
+
+            case 5:
+                printf("Logging out...\n");
+                return;
+
+            case 6:
+                printf("Exiting program...\n");
+                exit(0);
+        }
+    }
+}
+
 // ---------- Main Function ----------
 int main() {
     while (1) {
@@ -315,6 +381,8 @@ int main() {
             employee_menu(sock);
         else if (strcmp(role, "Manager") == 0)
             manager_menu(sock);
+        else if (strcmp(role, "Admin") == 0)
+            admin_menu(sock);
 
         close(sock);
 

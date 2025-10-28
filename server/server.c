@@ -337,10 +337,99 @@ void *handle_client(void *arg) {
         }
     }
 
+    // ---------------- ADMIN ----------------
+    else if (strcmp(role, "Admin") == 0) {
+        while (read(sock, &choice, sizeof(choice)) > 0) {
+            switch (choice) {
+                case 1: { // Add new employee
+                    char password[64];
+                    read(sock, password, sizeof(password));
+                    int newID = add_new_employee(password);
+                    if (newID > 0)
+                        snprintf(buf, sizeof(buf), "✅ Employee created successfully with ID: %d", newID);
+                    else
+                        snprintf(buf, sizeof(buf), "❌ Failed to create employee.");
+                    write(sock, buf, strlen(buf) + 1);
+                    break;
+                }
+                case 2: { // Modify any user password
+                    int uid;
+                    char newpwd[64];
+                    read(sock, &uid, sizeof(uid));
+                    read(sock, newpwd, sizeof(newpwd));
+                    int res = modify_user_details(uid, newpwd);
+                    snprintf(buf, sizeof(buf),
+                            res == 0 ? "✅ Password updated for user %d." : "❌ Failed to update user %d.", uid);
+                    write(sock, buf, strlen(buf) + 1);
+                    break;
+                }
+                case 3: { // Change user role
+                    int uid;
+                    char newrole[32];
+                    read(sock, &uid, sizeof(uid));
+                    read(sock, newrole, sizeof(newrole));
+
+                    int res = change_user_role(uid, newrole);
+
+                    // Prepare message for client
+                    if (res == 0) {
+                        snprintf(buf, sizeof(buf), "✅ Role updated for user %d → %s.", uid, newrole);
+                        write(sock, buf, strlen(buf) + 1);
+
+                        // 🟢 Log to server console
+                        printf("📝 [ADMIN LOG] Admin %d changed role of user %d → %s\n", userID, uid, newrole);
+
+                        // 🟡 Append to audit file
+                        FILE *logf = fopen("data/admin_audit.log", "a");
+                        if (logf) {
+                            time_t now = time(NULL);
+                            char *t = ctime(&now);
+                            t[strcspn(t, "\n")] = 0; // Remove newline
+                            fprintf(logf, "[%s] Admin %d changed role of user %d → %s\n", t, userID, uid, newrole);
+                            fclose(logf);
+                        }
+
+                    } else {
+                        snprintf(buf, sizeof(buf),
+                                "❌ Role change failed. Only Employee <-> Manager transitions allowed.");
+                        write(sock, buf, strlen(buf) + 1);
+
+                        // 🔴 Log failed attempt
+                        printf("⚠️ [ADMIN LOG] Admin %d attempted invalid role change for user %d (%s)\n",
+                            userID, uid, newrole);
+                    }
+
+                    break;
+                }
+
+                case 4: { // Change Admin password
+                    char newpwd[64];
+                    read(sock, newpwd, sizeof(newpwd));
+                    int res = change_password(userID, newpwd);
+                    snprintf(buf, sizeof(buf),
+                            res == 0 ? "✅ Admin password updated." : "❌ Failed to update password.");
+                    write(sock, buf, strlen(buf) + 1);
+                    break;
+                }
+                case 5:
+                    printf("👋 Admin %d logged out.\n", userID);
+                    remove_session(userID);
+                    close(sock);
+                    return NULL;
+                case 6:
+                    printf("👋 Admin %d exited.\n", userID);
+                    remove_session(userID);
+                    close(sock);
+                    return NULL;
+            }
+        }
+    }
+
     remove_session(userID);
     close(sock);
     return NULL;
 }
+
 
 // -------------------- MAIN --------------------
 int main() {

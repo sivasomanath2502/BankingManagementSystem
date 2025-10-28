@@ -4,3 +4,4 @@
 4001:password:Admin:active
 1002:password:Customer:inactive
 1003:password:Customer:active
+2002:password:Employee:active

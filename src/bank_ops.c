@@ -261,6 +261,7 @@ int view_feedbacks(char *buffer, size_t size) {
         snprintf(buffer, size, "No feedback available.\n");
     return 0;
 }
+
 // -------------------- ADD NEW CUSTOMER (Improved UI + Validation) --------------------
 int add_new_customer(const char *password) {
     FILE *fp = fopen("data/users.dat", "a+");
@@ -435,4 +436,94 @@ int view_all_customers(char *buffer, size_t size) {
     fclose(fp_acc);
     return 0;
 }
+
+// -------------------- ADMIN FUNCTIONS --------------------
+
+// Add new bank employee (similar to add_new_customer)
+int add_new_employee(const char *password) {
+    FILE *fp = fopen("data/users.dat", "a+");
+    if (!fp) return -1;
+
+    int lastID = 2000; // Start Employee IDs from 2001
+    FILE *read_fp = fopen("data/users.dat", "r");
+    if (read_fp) {
+        char fid[32], fpwd[32], frole[32], fstatus[32];
+        while (fscanf(read_fp, "%31[^:]:%31[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
+            int id = atoi(fid);
+            if (id > lastID && strcmp(frole, "Employee") == 0)
+                lastID = id;
+        }
+        fclose(read_fp);
+    }
+
+    int newID = lastID + 1;
+    fprintf(fp, "%d:%s:Employee:active\n", newID, password);
+    fclose(fp);
+
+    return newID;
+}
+
+// Modify password for any user (Customer or Employee)
+int modify_user_details(int userID, const char *newpwd) {
+    FILE *fp = fopen("data/users.dat", "r");
+    FILE *tmp = fopen("data/tmp_users.dat", "w");
+    if (!fp || !tmp) return -1;
+
+    char fid[32], fpwd[64], frole[32], fstatus[32];
+    char idbuf[16];
+    sprintf(idbuf, "%d", userID);
+    int updated = 0;
+
+    while (fscanf(fp, "%31[^:]:%63[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
+        if (strcmp(fid, idbuf) == 0) {
+            fprintf(tmp, "%s:%s:%s:%s\n", fid, newpwd, frole, fstatus);
+            updated = 1;
+        } else {
+            fprintf(tmp, "%s:%s:%s:%s\n", fid, fpwd, frole, fstatus);
+        }
+    }
+
+    fclose(fp);
+    fclose(tmp);
+    remove("data/users.dat");
+    rename("data/tmp_users.dat", "data/users.dat");
+
+    return updated ? 0 : -1;
+}
+
+// -------------------- CHANGE USER ROLE (Restricted: Employee <-> Manager only) --------------------
+int change_user_role(int userID, const char *new_role) {
+    FILE *fp = fopen("data/users.dat", "r");
+    FILE *tmp = fopen("data/tmp_users.dat", "w");
+    if (!fp || !tmp) return -1;
+
+    char fid[32], fpwd[64], frole[32], fstatus[32];
+    char idbuf[16];
+    sprintf(idbuf, "%d", userID);
+    int updated = 0;
+
+    while (fscanf(fp, "%31[^:]:%63[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
+        if (strcmp(fid, idbuf) == 0) {
+            // ✅ Restrict changes to only Employee <-> Manager
+            if ((strcmp(frole, "Employee") == 0 && strcmp(new_role, "Manager") == 0) ||
+                (strcmp(frole, "Manager") == 0 && strcmp(new_role, "Employee") == 0)) {
+                fprintf(tmp, "%s:%s:%s:%s\n", fid, fpwd, new_role, fstatus);
+                updated = 1;
+            } else {
+                // Keep unchanged if not allowed
+                fprintf(tmp, "%s:%s:%s:%s\n", fid, fpwd, frole, fstatus);
+            }
+        } else {
+            fprintf(tmp, "%s:%s:%s:%s\n", fid, fpwd, frole, fstatus);
+        }
+    }
+
+    fclose(fp);
+    fclose(tmp);
+    remove("data/users.dat");
+    rename("data/tmp_users.dat", "data/users.dat");
+
+    return updated ? 0 : -1;
+}
+
 

@@ -33,4 +33,9 @@ int toggle_customer_status(int custID, const char *new_status);
 int assign_loan_to_employee(int custID, int empID);
 int view_all_customers(char *buffer, size_t size);
 
+// --- Admin Functions ---
+int add_new_employee(const char *password);
+int modify_user_details(int userID, const char *newpwd);
+int change_user_role(int userID, const char *new_role);
+
 #endif

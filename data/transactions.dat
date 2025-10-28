@@ -6,3 +6,7 @@
 1003:TransferIn:2500.00:Tue Oct 28 14:08:23 2025
 1001:Deposit:5000.00:Tue Oct 28 14:22:14 2025
 1001:Withdraw:10.00:Tue Oct 28 14:24:33 2025
+1001:Deposit:10.00:Tue Oct 28 18:49:05 2025
+1001:Withdraw:500.00:Tue Oct 28 18:49:10 2025
+1001:TransferOut:500.00:Tue Oct 28 18:49:24 2025
+1002:TransferIn:500.00:Tue Oct 28 18:49:24 2025

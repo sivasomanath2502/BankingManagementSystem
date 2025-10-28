@@ -1,4 +1,6 @@
-1001:password:Customer
-2001:password:Employee
-3001:password:Manager
-4001:password:Admin
+1001:password:Customer:active
+2001:pass:Employee:active
+3001:password:Manager:active
+4001:password:Admin:active
+1002:password:Customer:inactive
+1003:password:Customer:active

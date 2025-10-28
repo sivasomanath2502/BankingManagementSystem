@@ -7,19 +7,35 @@
 // -------------------- USER AUTH --------------------
 int validate_user(const char *id, const char *pwd, char *role) {
     FILE *fp = fopen("data/users.dat", "r");
-    if (!fp) return 0;
+    if (!fp) return -1;
 
-    char fid[32], fpwd[32], frole[32];
-    while (fscanf(fp, "%31[^:]:%31[^:]:%31s\n", fid, fpwd, frole) == 3) {
-        if (strcmp(fid, id) == 0 && strcmp(fpwd, pwd) == 0) {
-            strcpy(role, frole);
-            fclose(fp);
-            return 1;
+    char fid[32], fpwd[32], frole[32], fstatus[32];
+    while (fscanf(fp, "%31[^:]:%31[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
+        if (strcmp(fid, id) == 0) {
+            // Found the user ID — now check status and password
+            if (strcmp(frole, "Customer") == 0 && strcmp(fstatus, "inactive") == 0) {
+                fclose(fp);
+                strcpy(role, "Inactive");
+                return 2;  // special code for inactive user
+            }
+
+            if (strcmp(fpwd, pwd) == 0) {
+                fclose(fp);
+                strcpy(role, frole);
+                return 1;  // valid login
+            } else {
+                fclose(fp);
+                return 0;  // wrong password
+            }
         }
     }
+
     fclose(fp);
-    return 0;
+    return 0;  // user not found
 }
+
+
+
 
 // -------------------- BALANCE VIEW --------------------
 int view_balance(int custID, double *balance) {
@@ -190,17 +206,19 @@ int change_password(int userID, const char *newpwd) {
     FILE *tmp = fopen("data/tmp_users.dat", "w");
     if (!fp || !tmp) return -1;
 
-    char fid[32], fpwd[32], frole[32];
+    char fid[32], fpwd[64], frole[32], fstatus[32];
     char idbuf[16];
     sprintf(idbuf, "%d", userID);
-    int changed = 0;
+    int updated = 0;
 
-    while (fscanf(fp, "%31[^:]:%31[^:]:%31s\n", fid, fpwd, frole) == 3) {
+    while (fscanf(fp, "%31[^:]:%63[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
         if (strcmp(fid, idbuf) == 0) {
-            fprintf(tmp, "%s:%s:%s\n", fid, newpwd, frole);
-            changed = 1;
+            // Update password for the matching ID
+            fprintf(tmp, "%s:%s:%s:%s\n", fid, newpwd, frole, fstatus);
+            updated = 1;
         } else {
-            fprintf(tmp, "%s:%s:%s\n", fid, fpwd, frole);
+            // Keep others unchanged
+            fprintf(tmp, "%s:%s:%s:%s\n", fid, fpwd, frole, fstatus);
         }
     }
 
@@ -208,8 +226,9 @@ int change_password(int userID, const char *newpwd) {
     fclose(tmp);
     remove("data/users.dat");
     rename("data/tmp_users.dat", "data/users.dat");
-    return changed ? 0 : -1;
+    return updated ? 0 : -1;
 }
+
 
 // -------------------- FEEDBACK --------------------
 int add_feedback(int custID, const char *feedback) {
@@ -244,35 +263,38 @@ int view_feedbacks(char *buffer, size_t size) {
 }
 // -------------------- ADD NEW CUSTOMER (Improved UI + Validation) --------------------
 int add_new_customer(const char *password) {
-    if (password == NULL || strlen(password) < 3)
-        return -2;  // Invalid password (too short)
+    FILE *fp = fopen("data/users.dat", "a+");
+    if (!fp) return -1;
 
-    FILE *fp_users = fopen("data/users.dat", "a+");
-    FILE *fp_acc = fopen("data/accounts.dat", "a+");
-    if (!fp_users || !fp_acc) return -1;
-
-    // --- Find highest Customer ID only ---
-    int lastCustID = 1000;  // start from 1001 for first customer
-    rewind(fp_users);
-    char fid[32], fpwd[32], frole[32];
-
-    while (fscanf(fp_users, "%31[^:]:%31[^:]:%31s\n", fid, fpwd, frole) == 3) {
-        int id = atoi(fid);
-        if (strcmp(frole, "Customer") == 0 && id > lastCustID)
-            lastCustID = id;
+    int lastID = 1000;  // Starting customer ID
+    // Find the last used customer ID
+    FILE *read_fp = fopen("data/users.dat", "r");
+    if (read_fp) {
+        char fid[32], fpwd[32], frole[32], fstatus[32];
+        while (fscanf(read_fp, "%31[^:]:%31[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
+            int id = atoi(fid);
+            if (id > lastID && strcmp(frole, "Customer") == 0)
+                lastID = id;
+        }
+        fclose(read_fp);
     }
 
-    int newCustID = lastCustID + 1;
+    int newID = lastID + 1;
 
-    // --- Append new records ---
-    fprintf(fp_users, "%d:%s:Customer\n", newCustID, password);
-    fprintf(fp_acc, "%d:0.00\n", newCustID);
+    // Add new customer with status = active
+    fprintf(fp, "%d:%s:Customer:active\n", newID, password);
+    fclose(fp);
 
-    fclose(fp_users);
-    fclose(fp_acc);
+    // Also initialize account balance = 0
+    FILE *acc_fp = fopen("data/accounts.dat", "a");
+    if (acc_fp) {
+        fprintf(acc_fp, "%d:0.00\n", newID);
+        fclose(acc_fp);
+    }
 
-    return newCustID;  // return generated ID
+    return newID;
 }
+
 
 // -------------------- MODIFY CUSTOMER PASSWORD --------------------
 int modify_customer_password(int custID, const char *newpwd) {
@@ -280,17 +302,19 @@ int modify_customer_password(int custID, const char *newpwd) {
     FILE *tmp = fopen("data/tmp_users.dat", "w");
     if (!fp || !tmp) return -1;
 
-    char fid[32], fpwd[32], frole[32];
+    char fid[32], fpwd[64], frole[32], fstatus[32];
     char idbuf[16];
     sprintf(idbuf, "%d", custID);
     int modified = 0;
 
-    while (fscanf(fp, "%31[^:]:%31[^:]:%31s\n", fid, fpwd, frole) == 3) {
+    while (fscanf(fp, "%31[^:]:%63[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
         if (strcmp(fid, idbuf) == 0 && strcmp(frole, "Customer") == 0) {
-            fprintf(tmp, "%s:%s:%s\n", fid, newpwd, frole);
+            // ✅ Update password but keep role and status same
+            fprintf(tmp, "%s:%s:%s:%s\n", fid, newpwd, frole, fstatus);
             modified = 1;
         } else {
-            fprintf(tmp, "%s:%s:%s\n", fid, fpwd, frole);
+            // ✅ Write back unchanged users
+            fprintf(tmp, "%s:%s:%s:%s\n", fid, fpwd, frole, fstatus);
         }
     }
 
@@ -300,5 +324,115 @@ int modify_customer_password(int custID, const char *newpwd) {
     rename("data/tmp_users.dat", "data/users.dat");
 
     return modified ? 0 : -1;
+}
+
+// -------------------- MANAGER FUNCTIONS --------------------
+
+// Toggle active/inactive status for customer
+int toggle_customer_status(int custID, const char *new_status) {
+    FILE *fp = fopen("data/users.dat", "r");
+    FILE *tmp = fopen("data/tmp_users.dat", "w");
+    if (!fp || !tmp) return -1;
+
+    char fid[32], fpwd[32], frole[32], fstatus[32];
+    char idbuf[16];
+    sprintf(idbuf, "%d", custID);
+    int updated = 0;
+
+    while (fscanf(fp, "%31[^:]:%31[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
+        if (strcmp(fid, idbuf) == 0 && strcmp(frole, "Customer") == 0) {
+            fprintf(tmp, "%s:%s:%s:%s\n", fid, fpwd, frole, new_status);
+            updated = 1;
+        } else {
+            fprintf(tmp, "%s:%s:%s:%s\n", fid, fpwd, frole, fstatus);
+        }
+    }
+
+    fclose(fp);
+    fclose(tmp);
+    remove("data/users.dat");
+    rename("data/tmp_users.dat", "data/users.dat");
+    return updated ? 0 : -1;
+}
+
+// Assign pending loan to an employee
+int assign_loan_to_employee(int custID, int empID) {
+    FILE *fp = fopen("data/loans.dat", "r");
+    FILE *tmp = fopen("data/tmp_loans.dat", "w");
+    if (!fp || !tmp) return -1;
+
+    int cid, assigned;
+    char status[32];
+    double amt;
+    int assigned_flag = 0;
+
+    while (fscanf(fp, "%d:%lf:%31[^:]:%d\n", &cid, &amt, status, &assigned) == 4) {
+        if (cid == custID && strcmp(status, "pending") == 0) {
+            fprintf(tmp, "%d:%.2f:%s:%d\n", cid, amt, status, empID);
+            assigned_flag = 1;
+        } else {
+            fprintf(tmp, "%d:%.2f:%s:%d\n", cid, amt, status, assigned);
+        }
+    }
+
+    fclose(fp);
+    fclose(tmp);
+    remove("data/loans.dat");
+    rename("data/tmp_loans.dat", "data/loans.dat");
+    return assigned_flag ? 0 : -1;
+}
+
+// -------------------- VIEW ALL CUSTOMERS --------------------
+int view_all_customers(char *buffer, size_t size) {
+    FILE *fp_users = fopen("data/users.dat", "r");
+    FILE *fp_acc = fopen("data/accounts.dat", "r");
+    if (!fp_users || !fp_acc) {
+        snprintf(buffer, size, "Unable to read customer records.\n");
+        if (fp_users) fclose(fp_users);
+        if (fp_acc) fclose(fp_acc);
+        return -1;
+    }
+
+    // --- Load balances into memory ---
+    int ids[1000];
+    double balances[1000];
+    int count = 0, id;
+    double bal;
+    while (fscanf(fp_acc, "%d:%lf\n", &id, &bal) == 2) {
+        ids[count] = id;
+        balances[count++] = bal;
+    }
+
+    // --- Prepare output header ---
+    size_t len = 0;
+    len += snprintf(buffer + len, size - len,
+        "---------------------------------------------------------------\n"
+        "| Customer ID | Balance (₹)   | Status     |\n"
+        "---------------------------------------------------------------\n");
+
+    // --- Match customers with balances ---
+    char fid[32], fpwd[32], frole[32], fstatus[32];
+    while (fscanf(fp_users, "%31[^:]:%31[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
+        if (strcmp(frole, "Customer") == 0) {
+            int custID = atoi(fid);
+            double custBal = 0.0;
+            for (int i = 0; i < count; i++) {
+                if (ids[i] == custID) {
+                    custBal = balances[i];
+                    break;
+                }
+            }
+            len += snprintf(buffer + len, size - len,
+                            "| %-11d | %-13.2f | %-10s |\n", custID, custBal, fstatus);
+            if (len >= size) break;
+        }
+    }
+
+    len += snprintf(buffer + len, size - len,
+        "---------------------------------------------------------------\n");
+
+    fclose(fp_users);
+    fclose(fp_acc);
+    return 0;
 }
 

@@ -3,9 +3,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
 
 #define PORT 8080
 
+// ---------- Safe I/O ----------
 ssize_t safe_read(int sock, void *buf, size_t size) {
     ssize_t n = read(sock, buf, size);
     if (n <= 0) return -1;
@@ -17,6 +19,8 @@ ssize_t safe_write(int sock, const void *buf, size_t size) {
     return write(sock, buf, size);
 }
 
+
+// ---------- Customer Menu ----------
 void customer_menu(int sock) {
     int choice;
     double amount;
@@ -33,7 +37,7 @@ void customer_menu(int sock) {
                "6. Change Password\n"
                "7. Add Feedback\n"
                "8. View Transaction History\n"
-               "9. Logout (Switch User)\n"
+               "9. Logout \n"
                "10. Exit Program\n"
                "Enter choice: ");
         scanf("%d", &choice);
@@ -41,9 +45,11 @@ void customer_menu(int sock) {
 
         switch (choice) {
             case 1:
+            case 8:
                 safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
+
             case 2:
                 printf("Enter amount: ");
                 scanf("%lf", &amount);
@@ -58,6 +64,7 @@ void customer_menu(int sock) {
                 safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
+
             case 4:
                 printf("Enter target ID: ");
                 scanf("%d", &target);
@@ -68,6 +75,7 @@ void customer_menu(int sock) {
                 safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
+
             case 5:
                 printf("Enter loan amount: ");
                 scanf("%lf", &amount);
@@ -75,29 +83,29 @@ void customer_menu(int sock) {
                 safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
+
             case 6:
                 printf("Enter new password: ");
-                scanf("%s", newpwd);
+                scanf("%s",newpwd);
                 safe_write(sock, newpwd, sizeof(newpwd));
                 safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
+
             case 7:
                 printf("Enter feedback: ");
-                getchar();
+                getchar();  // clear newline
                 fgets(feedback, sizeof(feedback), stdin);
                 feedback[strcspn(feedback, "\n")] = 0;
                 safe_write(sock, feedback, sizeof(feedback));
                 safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
-            case 8:
-                safe_read(sock, buffer, sizeof(buffer));
-                printf("%s\n", buffer);
-                break;
+
             case 9:
                 printf("Logging out...\n");
                 return;
+
             case 10:
                 printf("Exiting program...\n");
                 exit(0);
@@ -105,71 +113,81 @@ void customer_menu(int sock) {
     }
 }
 
+// ---------- Employee Menu ----------
 void employee_menu(int sock) {
     int choice, custID;
-    char buffer[4096], pwd[64], status[32];
+    char buffer[4096], pwd[64], status[32], newpwd[64];
 
     while (1) {
         printf("\n--- Employee Menu ---\n"
                "1. Add New Customer\n"
-               "2. Modify Customer Password\n"
+               "2. Modify Customer Details (Change Customer Password)\n"
                "3. View Assigned Loan Applications\n"
                "4. Approve/Reject Loan\n"
-               "5. View Customer Feedbacks\n"
-               "6. View Customer Transactions (Passbook)\n"
+               "5. View Customer Transactions\n"
+               "6. Change Your Password\n"
                "7. Logout\n"
                "8. Exit\n"
                "Enter choice: ");
         scanf("%d", &choice);
-        write(sock, &choice, sizeof(choice));
+        safe_write(sock, &choice, sizeof(choice));
 
         switch (choice) {
             case 1:
-                printf("\n--- Add New Customer ---\n");
-                printf("Enter new customer password (min 3 chars): ");
-                scanf("%s", pwd);
-                write(sock, pwd, sizeof(pwd));
-                read(sock, buffer, sizeof(buffer));
+                printf( "Enter password for new customer: ");
+                scanf("%s",pwd);
+                safe_write(sock, pwd, sizeof(pwd));
+                safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
+
             case 2:
                 printf("Enter Customer ID: ");
                 scanf("%d", &custID);
                 printf("Enter new password: ");
-                scanf("%s", pwd);
-                write(sock, &custID, sizeof(custID));
-                write(sock, pwd, sizeof(pwd));
-                read(sock, buffer, sizeof(buffer));
+                scanf("%s",pwd);
+                safe_write(sock, &custID, sizeof(custID));
+                safe_write(sock, pwd, sizeof(pwd));
+                safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
+
             case 3:
-                read(sock, buffer, sizeof(buffer));
-                printf("%s\n", buffer);
-                break;
-            case 4:
-                printf("Enter Customer ID: ");
-                scanf("%d", &custID);
-                printf("Enter status (approved/rejected): ");
-                scanf("%s", status);
-                write(sock, &custID, sizeof(custID));
-                write(sock, status, sizeof(status));
-                read(sock, buffer, sizeof(buffer));
+                safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
             case 5:
-                read(sock, buffer, sizeof(buffer));
-                printf("%s\n", buffer);
-                break;
-            case 6:
                 printf("Enter Customer ID to view passbook: ");
                 scanf("%d", &custID);
                 write(sock, &custID, sizeof(custID));
                 read(sock, buffer, sizeof(buffer));
                 printf("\n--- Transaction History for Customer %d ---\n%s\n", custID, buffer);
                 break;
+
+
+            case 4:
+                printf("Enter Customer ID: ");
+                scanf("%d", &custID);
+                printf("Enter status (approved/rejected): ");
+                scanf("%s", status);
+                safe_write(sock, &custID, sizeof(custID));
+                safe_write(sock, status, sizeof(status));
+                safe_read(sock, buffer, sizeof(buffer));
+                printf("%s\n", buffer);
+                break;
+
+            case 6:
+                printf("Enter your new password: ");
+                scanf("%s",newpwd);
+                safe_write(sock, newpwd, sizeof(newpwd));
+                safe_read(sock, buffer, sizeof(buffer));
+                printf("%s\n", buffer);
+                break;
+
             case 7:
                 printf("Logging out...\n");
                 return;
+
             case 8:
                 printf("Exiting program...\n");
                 exit(0);
@@ -177,8 +195,77 @@ void employee_menu(int sock) {
     }
 }
 
+// ---------- Manager Menu ----------
+void manager_menu(int sock) {
+    int choice, custID, empID;
+    char buffer[4096], status[16], newpwd[64];
 
+    while (1) {
+        printf("\n--- Manager Menu ---\n"
+               "1. Activate/Deactivate Customer Account\n"
+               "2. Assign Loan to Employee\n"
+               "3. Review Customer Feedback\n"
+               "4. Change Password\n"
+               "5. View All Customers\n"
+               "6. Logout\n"
+               "7. Exit\n"
+               "Enter choice: ");
+        scanf("%d", &choice);
+        safe_write(sock, &choice, sizeof(choice));
 
+        switch (choice) {
+            case 1:
+                printf("Enter Customer ID: ");
+                scanf("%d", &custID);
+                printf("Enter action (active/inactive): ");
+                scanf("%s", status);
+                safe_write(sock, &custID, sizeof(custID));
+                safe_write(sock, status, sizeof(status));
+                safe_read(sock, buffer, sizeof(buffer));
+                printf("%s\n", buffer);
+                break;
+
+            case 2:
+                printf("Enter Customer ID (loan applicant): ");
+                scanf("%d", &custID);
+                printf("Enter Employee ID to assign: ");
+                scanf("%d", &empID);
+                safe_write(sock, &custID, sizeof(custID));
+                safe_write(sock, &empID, sizeof(empID));
+                safe_read(sock, buffer, sizeof(buffer));
+                printf("%s\n", buffer);
+                break;
+
+            case 3:
+                safe_read(sock, buffer, sizeof(buffer));
+                printf("%s\n", buffer);
+                break;
+
+            case 4:
+                printf("Enter new password: ");
+                scanf("%s",newpwd);
+                safe_write(sock, newpwd, sizeof(newpwd));
+                safe_read(sock, buffer, sizeof(buffer));
+                printf("%s\n", buffer);
+                break;
+
+            case 5:
+                safe_read(sock, buffer, sizeof(buffer));
+                printf("\n--- All Customer Accounts ---\n%s\n", buffer);
+                break;
+
+            case 6:
+                printf("Logging out...\n");
+                return;
+
+            case 7:
+                printf("Exiting program...\n");
+                exit(0);
+        }
+    }
+}
+
+// ---------- Main Function ----------
 int main() {
     while (1) {
         int sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -198,17 +285,23 @@ int main() {
         printf("User ID: ");
         scanf("%s", id);
         printf("Password: ");
-        scanf("%s", pwd);
+        scanf("%s",pwd);
 
         safe_write(sock, id, sizeof(id));
         safe_write(sock, pwd, sizeof(pwd));
         safe_read(sock, role, sizeof(role));
 
         if (strcmp(role, "Invalid") == 0) {
-            printf("❌ Login failed. Try again.\n");
+            printf("❌ Invalid login credentials.\n");
             close(sock);
             continue;
-        } else if (strcmp(role, "AlreadyLoggedIn") == 0) {
+        } 
+        else if (strcmp(role, "Inactive") == 0) {
+            printf("❌ Your account is currently inactive. Please contact the bank.\n");
+            close(sock);
+            continue;
+        }
+        else if (strcmp(role, "AlreadyLoggedIn") == 0) {
             printf("⚠️ This user is already logged in elsewhere.\n");
             close(sock);
             continue;
@@ -220,6 +313,8 @@ int main() {
             customer_menu(sock);
         else if (strcmp(role, "Employee") == 0)
             employee_menu(sock);
+        else if (strcmp(role, "Manager") == 0)
+            manager_menu(sock);
 
         close(sock);
 
@@ -228,7 +323,7 @@ int main() {
         scanf(" %c", &again);
         if (again == 'n' || again == 'N') break;
     }
+
     printf("👋 Exiting client.\n");
     return 0;
 }
-

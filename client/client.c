@@ -9,14 +9,24 @@
 
 // ---------- Safe I/O ----------
 ssize_t safe_read(int sock, void *buf, size_t size) {
-    ssize_t n = read(sock, buf, size);
-    if (n <= 0) return -1;
-    ((char *)buf)[size - 1] = '\0';
+    ssize_t n = read(sock, buf, size - 1);
+    if (n <= 0) {
+        printf("\n🛑 Server closed connection. Client disconnected gracefully.\n");
+        close(sock);
+        exit(0);
+    }
+    ((char *)buf)[n] = '\0';
     return n;
 }
 
 ssize_t safe_write(int sock, const void *buf, size_t size) {
-    return write(sock, buf, size);
+    ssize_t n = write(sock, buf, size);
+    if (n <= 0) {
+        printf("\n🛑 Server closed connection. Client disconnected gracefully.\n");
+        close(sock);
+        exit(0);
+    }
+    return n;
 }
 
 
@@ -109,6 +119,10 @@ void customer_menu(int sock) {
             case 10:
                 printf("Exiting program...\n");
                 exit(0);
+            default:
+                printf("⚠️  Invalid choice! Please select a valid option (1–10).\n");
+                break;
+
         }
     }
 }
@@ -191,6 +205,9 @@ void employee_menu(int sock) {
             case 8:
                 printf("Exiting program...\n");
                 exit(0);
+            default:
+                printf("⚠️  Invalid choice! Please select a valid option (1–8).\n");
+                break;
         }
     }
 }
@@ -261,6 +278,9 @@ void manager_menu(int sock) {
             case 7:
                 printf("Exiting program...\n");
                 exit(0);
+            default:
+                printf("⚠️  Invalid choice! Please select a valid option (1–7).\n");
+                break;
         }
     }
 }
@@ -327,6 +347,10 @@ void admin_menu(int sock) {
             case 6:
                 printf("Exiting program...\n");
                 exit(0);
+            default:
+                printf("⚠️  Invalid choice! Please select a valid option (1–6).\n");
+                break;
+
         }
     }
 }
@@ -341,9 +365,13 @@ int main() {
         inet_pton(AF_INET, "127.0.0.1", &server.sin_addr);
 
         if (connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
-            perror("Connect failed");
-            return 1;
+            perror("❌ Connection failed");
+            printf("⚠️  Server might be offline. Try again later.\n");
+            close(sock);
+            sleep(2);
+            continue;
         }
+
 
         printf("\nConnected to server.\n");
         char id[32], pwd[32], role[32];

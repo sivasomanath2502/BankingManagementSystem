@@ -374,31 +374,12 @@ void *handle_client(void *arg) {
                     // Prepare message for client
                     if (res == 0) {
                         snprintf(buf, sizeof(buf), "✅ Role updated for user %d → %s.", uid, newrole);
-                        write(sock, buf, strlen(buf) + 1);
-
-                        // 🟢 Log to server console
-                        printf("📝 [ADMIN LOG] Admin %d changed role of user %d → %s\n", userID, uid, newrole);
-
-                        // 🟡 Append to audit file
-                        FILE *logf = fopen("data/admin_audit.log", "a");
-                        if (logf) {
-                            time_t now = time(NULL);
-                            char *t = ctime(&now);
-                            t[strcspn(t, "\n")] = 0; // Remove newline
-                            fprintf(logf, "[%s] Admin %d changed role of user %d → %s\n", t, userID, uid, newrole);
-                            fclose(logf);
-                        }
-
                     } else {
                         snprintf(buf, sizeof(buf),
                                 "❌ Role change failed. Only Employee <-> Manager transitions allowed.");
-                        write(sock, buf, strlen(buf) + 1);
-
-                        // 🔴 Log failed attempt
-                        printf("⚠️ [ADMIN LOG] Admin %d attempted invalid role change for user %d (%s)\n",
-                            userID, uid, newrole);
                     }
 
+                    write(sock, buf, strlen(buf) + 1);
                     break;
                 }
 

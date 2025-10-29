@@ -145,7 +145,7 @@ int view_transaction_history(int custID, char *buffer, size_t size) {
 int apply_loan(int custID, double amount) {
     FILE *fp = fopen("data/loans.dat", "a");
     if (!fp) return -1;
-    int assignedEmp = 2001; // default, can be dynamic later
+    int assignedEmp = 0;
     fprintf(fp, "%d:%.2f:pending:%d\n", custID, amount, assignedEmp);
     fclose(fp);
     return 0;
@@ -441,27 +441,33 @@ int view_all_customers(char *buffer, size_t size) {
 
 // Add new bank employee (similar to add_new_customer)
 int add_new_employee(const char *password) {
-    FILE *fp = fopen("data/users.dat", "a+");
+    FILE *fp = fopen("data/users.dat", "r");
     if (!fp) return -1;
 
-    int lastID = 2000; // Start Employee IDs from 2001
-    FILE *read_fp = fopen("data/users.dat", "r");
-    if (read_fp) {
-        char fid[32], fpwd[32], frole[32], fstatus[32];
-        while (fscanf(read_fp, "%31[^:]:%31[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
-            int id = atoi(fid);
-            if (id > lastID && strcmp(frole, "Employee") == 0)
-                lastID = id;
-        }
-        fclose(read_fp);
-    }
+    int lastID = 2000; // start range for employees
+    char fid[32], fpwd[64], frole[32], fstatus[32];
 
+    // 🔍 Find the last valid ID among employees OR managers
+    while (fscanf(fp, "%31[^:]:%63[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
+        int id = atoi(fid);
+        if ((strcmp(frole, "Employee") == 0 || strcmp(frole, "Manager") == 0) && id > lastID) {
+            lastID = id;
+        }
+    }
+    fclose(fp);
+
+    // ✅ Next available ID after the last employee/manager
     int newID = lastID + 1;
+
+    // ✍️ Append new employee record
+    fp = fopen("data/users.dat", "a");
+    if (!fp) return -1;
     fprintf(fp, "%d:%s:Employee:active\n", newID, password);
     fclose(fp);
 
     return newID;
 }
+
 
 // Modify password for any user (Customer or Employee)
 int modify_user_details(int userID, const char *newpwd) {

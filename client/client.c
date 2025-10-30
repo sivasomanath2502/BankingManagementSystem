@@ -367,7 +367,7 @@ int main() {
 	if (connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
             perror("❌ Connection failed");
             printf("⚠️  Server might be offline. Try again later.\n");
-            close(soc
+            close(sock);
             sleep(2);
             continue;
         }

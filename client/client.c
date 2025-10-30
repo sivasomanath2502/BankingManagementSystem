@@ -362,9 +362,8 @@ int main() {
         struct sockaddr_in server = {0};
         server.sin_family = AF_INET;
         server.sin_port = htons(PORT);
-        inet_pton(AF_INET, "127.0.0.1", &server.sin_addr);
-
-        if (connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
+        inet_pton(AF_INET, "10.10.3.67", &server.sin_addr);
+	if (connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
             perror("❌ Connection failed");
             printf("⚠️  Server might be offline. Try again later.\n");
             close(sock);

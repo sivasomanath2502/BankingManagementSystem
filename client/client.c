@@ -11,7 +11,7 @@
 ssize_t safe_read(int sock, void *buf, size_t size) {
     ssize_t n = read(sock, buf, size - 1);
     if (n <= 0) {
-        printf("\n🛑 Server closed connection. Client disconnected gracefully.\n");
+        printf("\nServer closed connection. Client disconnected gracefully.\n");
         close(sock);
         exit(0);
     }
@@ -22,7 +22,7 @@ ssize_t safe_read(int sock, void *buf, size_t size) {
 ssize_t safe_write(int sock, const void *buf, size_t size) {
     ssize_t n = write(sock, buf, size);
     if (n <= 0) {
-        printf("\n🛑 Server closed connection. Client disconnected gracefully.\n");
+        printf("\nServer closed connection. Client disconnected gracefully.\n");
         close(sock);
         exit(0);
     }
@@ -120,7 +120,7 @@ void customer_menu(int sock) {
                 printf("Exiting program...\n");
                 exit(0);
             default:
-                printf("⚠️  Invalid choice! Please select a valid option (1–10).\n");
+                printf("Invalid choice! Please select a valid option (1–10).\n");
                 break;
 
         }
@@ -135,7 +135,7 @@ void employee_menu(int sock) {
     while (1) {
         printf("\n--- Employee Menu ---\n"
                "1. Add New Customer\n"
-               "2. Modify Customer Details (Change Customer Password)\n"
+               "2. Modify Customer Details \n"
                "3. View Assigned Loan Applications\n"
                "4. Approve/Reject Loan\n"
                "5. View Customer Transactions\n"
@@ -206,7 +206,7 @@ void employee_menu(int sock) {
                 printf("Exiting program...\n");
                 exit(0);
             default:
-                printf("⚠️  Invalid choice! Please select a valid option (1–8).\n");
+                printf("Invalid choice! Please select a valid option (1–8).\n");
                 break;
         }
     }
@@ -279,7 +279,7 @@ void manager_menu(int sock) {
                 printf("Exiting program...\n");
                 exit(0);
             default:
-                printf("⚠️  Invalid choice! Please select a valid option (1–7).\n");
+                printf("Invalid choice! Please select a valid option (1–7).\n");
                 break;
         }
     }
@@ -348,7 +348,7 @@ void admin_menu(int sock) {
                 printf("Exiting program...\n");
                 exit(0);
             default:
-                printf("⚠️  Invalid choice! Please select a valid option (1–6).\n");
+                printf("Invalid choice! Please select a valid option (1–6).\n");
                 break;
 
         }
@@ -365,8 +365,8 @@ int main() {
 //IP Address - 10.10.3.67
         inet_pton(AF_INET, "127.0.0.1", &server.sin_addr);
 	if (connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
-            perror("❌ Connection failed");
-            printf("⚠️  Server might be offline. Try again later.\n");
+            perror("Connection failed");
+            printf("Server might be offline. Try again later.\n");
             close(sock);
             sleep(2);
             continue;
@@ -386,22 +386,22 @@ int main() {
         safe_read(sock, role, sizeof(role));
 
         if (strcmp(role, "Invalid") == 0) {
-            printf("❌ Invalid login credentials.\n");
+            printf("Invalid login credentials.\n");
             close(sock);
             continue;
         } 
         else if (strcmp(role, "Inactive") == 0) {
-            printf("❌ Your account is currently inactive. Please contact the bank.\n");
+            printf("Your account is currently inactive. Please contact the bank.\n");
             close(sock);
             continue;
         }
         else if (strcmp(role, "AlreadyLoggedIn") == 0) {
-            printf("⚠️ This user is already logged in elsewhere.\n");
+            printf("This user is already logged in elsewhere.\n");
             close(sock);
             continue;
         }
 
-        printf("✅ Login successful. Role: %s\n", role);
+        printf("Login successful. Role: %s\n", role);
 
         if (strcmp(role, "Customer") == 0)
             customer_menu(sock);
@@ -415,11 +415,11 @@ int main() {
         close(sock);
 
         char again;
-        printf("\n🔁 Do you want to login again? (y/n): ");
+        printf("\nDo you want to login again? (y/n): ");
         scanf(" %c", &again);
         if (again == 'n' || again == 'N') break;
     }
 
-    printf("👋 Exiting client.\n");
+    printf("Exiting client.\n");
     return 0;
 }

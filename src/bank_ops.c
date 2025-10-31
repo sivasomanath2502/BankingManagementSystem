@@ -267,8 +267,7 @@ int add_new_customer(const char *password) {
     FILE *fp = fopen("data/users.dat", "a+");
     if (!fp) return -1;
 
-    int lastID = 1000;  // Starting customer ID
-    // Find the last used customer ID
+    int lastID = 1000; 
     FILE *read_fp = fopen("data/users.dat", "r");
     if (read_fp) {
         char fid[32], fpwd[32], frole[32], fstatus[32];
@@ -310,11 +309,11 @@ int modify_customer_password(int custID, const char *newpwd) {
 
     while (fscanf(fp, "%31[^:]:%63[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
         if (strcmp(fid, idbuf) == 0 && strcmp(frole, "Customer") == 0) {
-            // ✅ Update password but keep role and status same
+            // Update password but keep role and status same
             fprintf(tmp, "%s:%s:%s:%s\n", fid, newpwd, frole, fstatus);
             modified = 1;
         } else {
-            // ✅ Write back unchanged users
+            // Write back unchanged users
             fprintf(tmp, "%s:%s:%s:%s\n", fid, fpwd, frole, fstatus);
         }
     }
@@ -447,7 +446,7 @@ int add_new_employee(const char *password) {
     int lastID = 2000; // start range for employees
     char fid[32], fpwd[64], frole[32], fstatus[32];
 
-    // 🔍 Find the last valid ID among employees OR managers
+    // Find the last valid ID among employees OR managers
     while (fscanf(fp, "%31[^:]:%63[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
         int id = atoi(fid);
         if ((strcmp(frole, "Employee") == 0 || strcmp(frole, "Manager") == 0) && id > lastID) {
@@ -456,10 +455,10 @@ int add_new_employee(const char *password) {
     }
     fclose(fp);
 
-    // ✅ Next available ID after the last employee/manager
+    // Next available ID after the last employee/manager
     int newID = lastID + 1;
 
-    // ✍️ Append new employee record
+    // Append new employee record
     fp = fopen("data/users.dat", "a");
     if (!fp) return -1;
     fprintf(fp, "%d:%s:Employee:active\n", newID, password);
@@ -510,7 +509,7 @@ int change_user_role(int userID, const char *new_role) {
 
     while (fscanf(fp, "%31[^:]:%63[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
         if (strcmp(fid, idbuf) == 0) {
-            // ✅ Restrict changes to only Employee <-> Manager
+            // Restrict changes to only Employee <-> Manager
             if ((strcmp(frole, "Employee") == 0 && strcmp(new_role, "Manager") == 0) ||
                 (strcmp(frole, "Manager") == 0 && strcmp(new_role, "Employee") == 0)) {
                 fprintf(tmp, "%s:%s:%s:%s\n", fid, fpwd, new_role, fstatus);

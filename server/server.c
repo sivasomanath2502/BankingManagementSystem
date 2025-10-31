@@ -68,7 +68,7 @@ void *server_command_listener(void *arg) {
         if (fgets(cmd, sizeof(cmd), stdin)) {
             cmd[strcspn(cmd, "\n")] = 0;
             if (strcasecmp(cmd, "exit") == 0) {
-                printf("🛑 Server shutting down...\n");
+                printf("Server shutting down...\n");
                 server_running = 0;
                 shutdown(server_fd, SHUT_RDWR);
                 close(server_fd);
@@ -80,7 +80,7 @@ void *server_command_listener(void *arg) {
 }
 
 void handle_sigint(int sig) {
-    printf("\n🛑 Caught Ctrl+C. Shutting down server...\n");
+    printf("\nCaught Ctrl+C. Shutting down server...\n");
     server_running = 0;
     shutdown(server_fd, SHUT_RDWR);
     close(server_fd);
@@ -120,14 +120,14 @@ void *handle_client(void *arg) {
     if (is_user_logged_in(userID)) {
         strcpy(role, "AlreadyLoggedIn");
         write(sock, role, strlen(role) + 1);
-        printf("⚠️ Duplicate login attempt for %d\n", userID);
+        printf("Duplicate login attempt for %d\n", userID);
         close(sock);
         return NULL;
     }
 
     add_session(userID);
     write(sock, role, strlen(role) + 1);
-    printf("✅ %s logged in (ID=%d)\n", role, userID);
+    printf("%s logged in (ID=%d)\n", role, userID);
 
     // ---------------- CUSTOMER ----------------
     if (strcmp(role, "Customer") == 0) {
@@ -190,8 +190,8 @@ void *handle_client(void *arg) {
                     read(sock, newpwd, sizeof(newpwd));
                     int res = change_password(userID, newpwd);
                     snprintf(buf, sizeof(buf),
-                             res == 0 ? "✅ Password changed successfully."
-                                      : "❌ Failed to change password.");
+                             res == 0 ? "Password changed successfully."
+                                      : "Failed to change password.");
                     write(sock, buf, strlen(buf) + 1);
                     break;
                 }
@@ -209,7 +209,7 @@ void *handle_client(void *arg) {
                 }
                 case 9: // Logout
                 case 10:
-                    printf("👋 Customer %d disconnected.\n", userID);
+                    printf("Customer %d disconnected.\n", userID);
                     remove_session(userID);
                     close(sock);
                     return NULL;
@@ -226,8 +226,8 @@ void *handle_client(void *arg) {
                     read(sock, password, sizeof(password));
                     int newID = add_new_customer(password);
                     snprintf(buf, sizeof(buf),
-                             newID > 0 ? "✅ New customer created successfully with ID: %d"
-                                       : "❌ Failed to create new customer.", newID);
+                             newID > 0 ? "New customer created successfully with ID: %d"
+                                       : "Failed to create new customer.", newID);
                     write(sock, buf, strlen(buf) + 1);
                     break;
                 }
@@ -238,8 +238,8 @@ void *handle_client(void *arg) {
                     read(sock, newpwd, sizeof(newpwd));
                     int res = modify_customer_password(custID, newpwd);
                     snprintf(buf, sizeof(buf),
-                             res == 0 ? "✅ Customer %d password updated successfully."
-                                      : "❌ Customer not found or update failed.", custID);
+                             res == 0 ? "Customer %d password updated successfully."
+                                      : "Customer not found or update failed.", custID);
                     write(sock, buf, strlen(buf) + 1);
                     break;
                 }
@@ -253,8 +253,8 @@ void *handle_client(void *arg) {
                     read(sock, &cid, sizeof(cid));
                     read(sock, st, sizeof(st));
                     status = update_loan_status(cid, st);
-                    write(sock, status == 0 ? "✅ Loan status updated." : "❌ Update failed.",
-                          strlen(status == 0 ? "✅ Loan status updated." : "❌ Update failed.") + 1);
+                    write(sock, status == 0 ? "Loan status updated." : "Update failed.",
+                          strlen(status == 0 ? "Loan status updated." : "Update failed.") + 1);
                     break;
                 }
                 case 5: {
@@ -269,14 +269,14 @@ void *handle_client(void *arg) {
                     read(sock, newpwd, sizeof(newpwd));
                     int res = change_password(userID, newpwd);
                     snprintf(buf, sizeof(buf),
-                             res == 0 ? "✅ Password changed successfully."
-                                      : "❌ Failed to change password.");
+                             res == 0 ? "Password changed successfully."
+                                      : "Failed to change password.");
                     write(sock, buf, strlen(buf) + 1);
                     break;
                 }
                 case 7:
                 case 8:
-                    printf("👋 Employee %d disconnected.\n", userID);
+                    printf("Employee %d disconnected.\n", userID);
                     remove_session(userID);
                     close(sock);
                     return NULL;
@@ -295,7 +295,7 @@ void *handle_client(void *arg) {
                     read(sock, action, sizeof(action));
                     int res = toggle_customer_status(cid, action);
                     snprintf(buf, sizeof(buf),
-                             res == 0 ? "✅ Customer %d set to %s" : "❌ Failed to update.",
+                             res == 0 ? "Customer %d set to %s" : "Failed to update.",
                              cid, action);
                     write(sock, buf, strlen(buf) + 1);
                     break;
@@ -306,8 +306,8 @@ void *handle_client(void *arg) {
                     read(sock, &empID, sizeof(empID));
                     int res = assign_loan_to_employee(cid, empID);
                     snprintf(buf, sizeof(buf),
-                             res == 0 ? "✅ Loan of %d assigned to Employee %d"
-                                      : "❌ Failed to assign.",
+                             res == 0 ? "Loan of %d assigned to Employee %d"
+                                      : "Failed to assign.",
                              cid, empID);
                     write(sock, buf, strlen(buf) + 1);
                     break;
@@ -320,7 +320,7 @@ void *handle_client(void *arg) {
                     char newpwd[64];
                     read(sock, newpwd, sizeof(newpwd));
                     change_password(userID, newpwd);
-                    write(sock, "✅ Password changed.", strlen("✅ Password changed.") + 1);
+                    write(sock, "Password changed.", strlen("Password changed.") + 1);
                     break;
                 }
                 case 5:
@@ -329,7 +329,7 @@ void *handle_client(void *arg) {
                     break;
                 case 6:
                 case 7:
-                    printf("👋 Manager %d disconnected.\n", userID);
+                    printf("Manager %d disconnected.\n", userID);
                     remove_session(userID);
                     close(sock);
                     return NULL;
@@ -346,9 +346,9 @@ void *handle_client(void *arg) {
                     read(sock, password, sizeof(password));
                     int newID = add_new_employee(password);
                     if (newID > 0)
-                        snprintf(buf, sizeof(buf), "✅ Employee created successfully with ID: %d", newID);
+                        snprintf(buf, sizeof(buf), "Employee created successfully with ID: %d", newID);
                     else
-                        snprintf(buf, sizeof(buf), "❌ Failed to create employee.");
+                        snprintf(buf, sizeof(buf), "Failed to create employee.");
                     write(sock, buf, strlen(buf) + 1);
                     break;
                 }
@@ -359,7 +359,7 @@ void *handle_client(void *arg) {
                     read(sock, newpwd, sizeof(newpwd));
                     int res = modify_user_details(uid, newpwd);
                     snprintf(buf, sizeof(buf),
-                            res == 0 ? "✅ Password updated for user %d." : "❌ Failed to update user %d.", uid);
+                            res == 0 ? "Password updated for user %d." : "Failed to update user %d.", uid);
                     write(sock, buf, strlen(buf) + 1);
                     break;
                 }
@@ -373,10 +373,10 @@ void *handle_client(void *arg) {
 
                     // Prepare message for client
                     if (res == 0) {
-                        snprintf(buf, sizeof(buf), "✅ Role updated for user %d → %s.", uid, newrole);
+                        snprintf(buf, sizeof(buf), "Role updated for user %d → %s.", uid, newrole);
                     } else {
                         snprintf(buf, sizeof(buf),
-                                "❌ Role change failed. Only Employee <-> Manager transitions allowed.");
+                                "Role change failed. Only Employee <-> Manager transitions allowed.");
                     }
 
                     write(sock, buf, strlen(buf) + 1);
@@ -388,17 +388,17 @@ void *handle_client(void *arg) {
                     read(sock, newpwd, sizeof(newpwd));
                     int res = change_password(userID, newpwd);
                     snprintf(buf, sizeof(buf),
-                            res == 0 ? "✅ Admin password updated." : "❌ Failed to update password.");
+                            res == 0 ? "Admin password updated." : "Failed to update password.");
                     write(sock, buf, strlen(buf) + 1);
                     break;
                 }
                 case 5:
-                    printf("👋 Admin %d logged out.\n", userID);
+                    printf("Admin %d logged out.\n", userID);
                     remove_session(userID);
                     close(sock);
                     return NULL;
                 case 6:
-                    printf("👋 Admin %d exited.\n", userID);
+                    printf("Admin %d exited.\n", userID);
                     remove_session(userID);
                     close(sock);
                     return NULL;
@@ -430,7 +430,7 @@ int main() {
     bind(server_fd, (struct sockaddr*)&addr, sizeof(addr));
     listen(server_fd, 5);
 
-    printf("🚀 Server started on port %d\n", PORT);
+    printf("Server started on port %d\n", PORT);
 
     pthread_t cmd_thread;
     pthread_create(&cmd_thread, NULL, server_command_listener, NULL);
@@ -442,7 +442,7 @@ int main() {
             if (!server_running) break;
             continue;
         }
-        printf("🔗 Client connected.\n");
+        printf("Client connected.\n");
         int *new_sock = malloc(sizeof(int));
         *new_sock = client_sock;
         pthread_t tid;
@@ -450,6 +450,6 @@ int main() {
         pthread_detach(tid);
     }
 
-    printf("✅ Server stopped.\n");
+    printf("Server stopped.\n");
     return 0;
 }

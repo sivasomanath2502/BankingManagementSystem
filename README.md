@@ -192,7 +192,7 @@ Durability	Data stored persistently in .dat files
 
 🧩 Project Structure
 
-bank-management-system/
+```bank-management-system/
 ├── client/
 │   └── client.c
 ├── server/
@@ -207,7 +207,7 @@ bank-management-system/
 │   ├── transactions.dat
 │   ├── loans.dat
 │   └── feedback.dat
-└── README.md
+└── README.md```
 
 
 ---

@@ -27,17 +27,17 @@ $(BUILD_DIR)/bank_ops.o: $(SRC_DIR)/bank_ops.c include/bank_ops.h
 # build server
 $(SERVER): $(SERVER_DIR)/server.c $(OBJS)
 	$(CC) $(CFLAGS) $(SERVER_DIR)/server.c $(OBJS) -lpthread -o $(SERVER)
-	@echo "✅ Server built successfully!"
+	@echo "Server built successfully!"
 
 # build client
 $(CLIENT): $(CLIENT_DIR)/client.c
 	$(CC) $(CFLAGS) $(CLIENT_DIR)/client.c -o $(CLIENT)
-	@echo "✅ Client built successfully!"
+	@echo "Client built successfully!"
 
 # clean build files
 clean:
 	rm -rf $(BUILD_DIR)/*.o $(SERVER) $(CLIENT)
-	@echo "🧹 Cleaned build directory."
+	@echo "Cleaned build directory."
 
 # run server
 run-server: $(SERVER)

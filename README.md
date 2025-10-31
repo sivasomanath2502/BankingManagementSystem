@@ -213,7 +213,6 @@ bank-management-system/
 
 ---
 
-📊 Evaluation Criteria Mapping
 
 Criteria	Implementation
 

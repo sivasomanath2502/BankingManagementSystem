@@ -206,7 +206,7 @@ void employee_menu(int sock) {
                 printf("Exiting program...\n");
                 exit(0);
             default:
-                printf("Invalid choice! Please select a valid option (1–8).\n");
+                printf("Invalid choice! Please select a valid option (1-8).\n");
                 break;
         }
     }
@@ -279,7 +279,7 @@ void manager_menu(int sock) {
                 printf("Exiting program...\n");
                 exit(0);
             default:
-                printf("Invalid choice! Please select a valid option (1–7).\n");
+                printf("Invalid choice! Please select a valid option (1-7).\n");
                 break;
         }
     }
@@ -348,7 +348,7 @@ void admin_menu(int sock) {
                 printf("Exiting program...\n");
                 exit(0);
             default:
-                printf("Invalid choice! Please select a valid option (1–6).\n");
+                printf("Invalid choice! Please select a valid option (1-6).\n");
                 break;
 
         }

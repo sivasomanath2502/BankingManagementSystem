@@ -166,19 +166,37 @@ void *handle_client(void *arg) {
                     int target;
                     read(sock, &target, sizeof(target));
                     read(sock, &amount, sizeof(amount));
+
                     double bal;
-                    view_balance(userID, &bal);
-                    if (amount > bal)
-                        write(sock, "Insufficient balance.", strlen("Insufficient balance.") + 1);
-                    else {
-                        update_balance(userID, amount, 0);
-                        update_balance(target, amount, 1);
-                        record_transaction(userID, "TransferOut", amount);
-                        record_transaction(target, "TransferIn", amount);
-                        write(sock, "Transfer successful.", strlen("Transfer successful.") + 1);
+                    if (view_balance(userID, &bal) != 0) {
+                        write(sock, "Source account not found.", 26);
+                        break;
                     }
+
+                    // Check if target exists
+                    double target_bal;
+                    if (view_balance(target, &target_bal) != 0) {
+                        write(sock, "Target customer does not exist.", 32);
+                        break;
+                    }
+
+                    // Check for sufficient funds
+                    if (amount > bal) {
+                        write(sock, "Insufficient balance.", 22);
+                        break;
+                    }
+
+                    // Perform transfer safely
+                    update_balance(userID, amount, 0);
+                    update_balance(target, amount, 1);
+                    record_transaction(userID, "TransferOut", amount);
+                    record_transaction(target, "TransferIn", amount);
+
+                    write(sock, "Transfer successful.", 21);
                     break;
                 }
+
+
                 case 5: { // Loan
                     read(sock, &amount, sizeof(amount));
                     apply_loan(userID, amount);

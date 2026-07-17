@@ -120,7 +120,7 @@ void customer_menu(int sock) {
                 printf("Exiting program...\n");
                 exit(0);
             default:
-                printf("Invalid choice! Please select a valid option (1–10).\n");
+                printf("Invalid choice! Please select a valid option (1-10).\n");
                 break;
 
         }
@@ -173,8 +173,8 @@ void employee_menu(int sock) {
             case 5:
                 printf("Enter Customer ID to view passbook: ");
                 scanf("%d", &custID);
-                write(sock, &custID, sizeof(custID));
-                read(sock, buffer, sizeof(buffer));
+                safe_write(sock, &custID, sizeof(custID));
+                safe_read(sock, buffer, sizeof(buffer));
                 printf("\n--- Transaction History for Customer %d ---\n%s\n", custID, buffer);
                 break;
 
@@ -206,7 +206,7 @@ void employee_menu(int sock) {
                 printf("Exiting program...\n");
                 exit(0);
             default:
-                printf("Invalid choice! Please select a valid option (1–8).\n");
+                printf("Invalid choice! Please select a valid option (1-8).\n");
                 break;
         }
     }
@@ -279,12 +279,13 @@ void manager_menu(int sock) {
                 printf("Exiting program...\n");
                 exit(0);
             default:
-                printf("Invalid choice! Please select a valid option (1–7).\n");
+                printf("Invalid choice! Please select a valid option (1-7).\n");
                 break;
         }
     }
 }
 
+// ---------- Admin Menu ----------
 void admin_menu(int sock) {
     int choice, userID;
     char buffer[4096], newpwd[64], newrole[32];
@@ -299,14 +300,14 @@ void admin_menu(int sock) {
                "6. Exit\n"
                "Enter choice: ");
         scanf("%d", &choice);
-        write(sock, &choice, sizeof(choice));
+        safe_write(sock, &choice, sizeof(choice));
 
         switch (choice) {
             case 1:
                 printf("Enter new employee password: ");
                 scanf("%s", newpwd);
-                write(sock, newpwd, sizeof(newpwd));
-                read(sock, buffer, sizeof(buffer));
+                safe_write(sock, newpwd, sizeof(newpwd));
+                safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
 
@@ -315,9 +316,9 @@ void admin_menu(int sock) {
                 scanf("%d", &userID);
                 printf("Enter new password: ");
                 scanf("%s", newpwd);
-                write(sock, &userID, sizeof(userID));
-                write(sock, newpwd, sizeof(newpwd));
-                read(sock, buffer, sizeof(buffer));
+                safe_write(sock, &userID, sizeof(userID));
+                safe_write(sock, newpwd, sizeof(newpwd));
+                safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
 
@@ -326,17 +327,17 @@ void admin_menu(int sock) {
                 scanf("%d", &userID);
                 printf("Enter new role (Employee/Manager): ");
                 scanf("%s", newrole);
-                write(sock, &userID, sizeof(userID));
-                write(sock, newrole, sizeof(newrole));
-                read(sock, buffer, sizeof(buffer));
+                safe_write(sock, &userID, sizeof(userID));
+                safe_write(sock, newrole, sizeof(newrole));
+                safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
 
             case 4:
                 printf("Enter new admin password: ");
                 scanf("%s", newpwd);
-                write(sock, newpwd, sizeof(newpwd));
-                read(sock, buffer, sizeof(buffer));
+                safe_write(sock, newpwd, sizeof(newpwd));
+                safe_read(sock, buffer, sizeof(buffer));
                 printf("%s\n", buffer);
                 break;
 
@@ -348,7 +349,7 @@ void admin_menu(int sock) {
                 printf("Exiting program...\n");
                 exit(0);
             default:
-                printf("Invalid choice! Please select a valid option (1–6).\n");
+                printf("Invalid choice! Please select a valid option (1-6).\n");
                 break;
 
         }
@@ -362,7 +363,6 @@ int main() {
         struct sockaddr_in server = {0};
         server.sin_family = AF_INET;
         server.sin_port = htons(PORT);
-//IP Address - 10.10.3.67
         inet_pton(AF_INET, "127.0.0.1", &server.sin_addr);
 	if (connect(sock, (struct sockaddr*)&server, sizeof(server)) < 0) {
             perror("Connection failed");

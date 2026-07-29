@@ -9,6 +9,7 @@ int validate_user(const char *id, const char *pwd, char *role);
 // -------------------- CUSTOMER OPS --------------------
 int view_balance(int custID, double *balance);
 int update_balance(int custID, double amount, int isDeposit);
+int debit_if_sufficient(int custID, double amount, double *new_balance);
 int record_transaction(int custID, const char *type, double amount);
 int view_transaction_history(int custID, char *buffer, size_t size);
 

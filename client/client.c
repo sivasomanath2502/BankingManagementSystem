@@ -285,7 +285,6 @@ void manager_menu(int sock) {
     }
 }
 
-// ---------- Admin Menu ----------
 void admin_menu(int sock) {
     int choice, userID;
     char buffer[4096], newpwd[64], newrole[32];
@@ -389,7 +388,7 @@ int main() {
             printf("Invalid login credentials.\n");
             close(sock);
             continue;
-        } 
+        }
         else if (strcmp(role, "Inactive") == 0) {
             printf("Your account is currently inactive. Please contact the bank.\n");
             close(sock);

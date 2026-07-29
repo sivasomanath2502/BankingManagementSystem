@@ -5,19 +5,34 @@
 #include <pthread.h>
 #include "../include/bank_ops.h"
 
-
+// --------------------------------------------------------------------
+// One mutex per data file. All threads run inside the same server
+// process (thread-per-client model), so plain pthread mutexes are
+// sufficient -- we don't need cross-process file locks (flock/fcntl)
+// here. Every function that touches a given .dat file takes the
+// matching lock before doing ANY read of it and holds it until the
+// write-back (rename) is done, so a read-modify-write sequence can
+// never be interleaved with another thread's read-modify-write on
+// the same file.
+//
+// Lock ordering rule (to avoid deadlock in functions that touch two
+// files): always acquire users_lock before accounts_lock.
+// --------------------------------------------------------------------
 static pthread_mutex_t users_lock        = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t accounts_lock     = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t loans_lock        = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t feedback_lock     = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t transactions_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t feedback_lock     = PTHREAD_MUTEX_INITIALIZER;
 
 // -------------------- USER AUTH --------------------
 int validate_user(const char *id, const char *pwd, char *role) {
     pthread_mutex_lock(&users_lock);
 
     FILE *fp = fopen("data/users.dat", "r");
-    if (!fp) { pthread_mutex_unlock(&users_lock); return -1; }
+    if (!fp) {
+        pthread_mutex_unlock(&users_lock);
+        return -1;
+    }
 
     char fid[32], fpwd[32], frole[32], fstatus[32];
     while (fscanf(fp, "%31[^:]:%31[^:]:%31[^:]:%31s\n", fid, fpwd, frole, fstatus) == 4) {
@@ -47,12 +62,16 @@ int validate_user(const char *id, const char *pwd, char *role) {
     return 0;  // user not found
 }
 
+
 // -------------------- BALANCE VIEW --------------------
 int view_balance(int custID, double *balance) {
     pthread_mutex_lock(&accounts_lock);
 
     FILE *fp = fopen("data/accounts.dat", "r");
-    if (!fp) { pthread_mutex_unlock(&accounts_lock); return -1; }
+    if (!fp) {
+        pthread_mutex_unlock(&accounts_lock);
+        return -1;
+    }
 
     int id;
     double bal;
@@ -69,7 +88,12 @@ int view_balance(int custID, double *balance) {
     return -1;
 }
 
-// -------------------- BALANCE UPDATE --------------------
+// -------------------- BALANCE UPDATE (unconditional credit/debit) --------------------
+// Used for deposits, and for the "credit the other side" leg of a
+// transfer. Callers that need a check-then-act debit (withdraw,
+// transfer-out) MUST use debit_if_sufficient() instead -- calling
+// view_balance() then update_balance() separately re-opens the race
+// window this file is meant to close.
 int update_balance(int custID, double amount, int isDeposit) {
     pthread_mutex_lock(&accounts_lock);
 
@@ -96,12 +120,55 @@ int update_balance(int custID, double amount, int isDeposit) {
 
     fclose(fp);
     fclose(temp);
-
-    remove("data/accounts.dat");
     rename("data/tmp_accounts.dat", "data/accounts.dat");
 
     pthread_mutex_unlock(&accounts_lock);
     return found ? 0 : -1;
+}
+
+// -------------------- ATOMIC CHECK-THEN-DEBIT --------------------
+// Reads the balance and, if sufficient, deducts amount -- all while
+// holding accounts_lock, so no other thread can observe or modify
+// this account's balance in between the check and the deduction.
+// Returns: 0 = success (new_balance set), -1 = insufficient funds,
+// -2 = account not found.
+int debit_if_sufficient(int custID, double amount, double *new_balance) {
+    pthread_mutex_lock(&accounts_lock);
+
+    FILE *fp = fopen("data/accounts.dat", "r");
+    FILE *temp = fopen("data/tmp_accounts.dat", "w");
+    if (!fp || !temp) {
+        if (fp) fclose(fp);
+        if (temp) fclose(temp);
+        pthread_mutex_unlock(&accounts_lock);
+        return -2;
+    }
+
+    int id;
+    double bal;
+    int found = 0;
+    int result = -2;
+
+    while (fscanf(fp, "%d:%lf\n", &id, &bal) == 2) {
+        if (id == custID) {
+            found = 1;
+            if (amount > bal) {
+                result = -1;  // insufficient funds -- leave balance unchanged
+            } else {
+                bal -= amount;
+                result = 0;
+                if (new_balance) *new_balance = bal;
+            }
+        }
+        fprintf(temp, "%d:%.2f\n", id, bal);
+    }
+
+    fclose(fp);
+    fclose(temp);
+    rename("data/tmp_accounts.dat", "data/accounts.dat");
+
+    pthread_mutex_unlock(&accounts_lock);
+    return found ? result : -2;
 }
 
 // -------------------- RECORD TRANSACTION --------------------
@@ -109,7 +176,10 @@ int record_transaction(int custID, const char *type, double amount) {
     pthread_mutex_lock(&transactions_lock);
 
     FILE *fp = fopen("data/transactions.dat", "a");
-    if (!fp) { pthread_mutex_unlock(&transactions_lock); return -1; }
+    if (!fp) {
+        pthread_mutex_unlock(&transactions_lock);
+        return -1;
+    }
 
     time_t now = time(NULL);
     char *t = ctime(&now);
@@ -117,7 +187,6 @@ int record_transaction(int custID, const char *type, double amount) {
 
     fprintf(fp, "%d:%s:%.2f:%s\n", custID, type, amount, t);
     fclose(fp);
-
     pthread_mutex_unlock(&transactions_lock);
     return 0;
 }
@@ -172,20 +241,20 @@ int view_transaction_history(int custID, char *buffer, size_t size) {
 // -------------------- LOANS --------------------
 int apply_loan(int custID, double amount) {
     pthread_mutex_lock(&loans_lock);
-
     FILE *fp = fopen("data/loans.dat", "a");
-    if (!fp) { pthread_mutex_unlock(&loans_lock); return -1; }
+    if (!fp) {
+        pthread_mutex_unlock(&loans_lock);
+        return -1;
+    }
     int assignedEmp = 0;
     fprintf(fp, "%d:%.2f:pending:%d\n", custID, amount, assignedEmp);
     fclose(fp);
-
     pthread_mutex_unlock(&loans_lock);
     return 0;
 }
 
 int view_loans(int empID, char *buffer, size_t size) {
     pthread_mutex_lock(&loans_lock);
-
     FILE *fp = fopen("data/loans.dat", "r");
     if (!fp) {
         snprintf(buffer, size, "No loan records.\n");
@@ -206,14 +275,12 @@ int view_loans(int empID, char *buffer, size_t size) {
     fclose(fp);
     if (len == 0)
         snprintf(buffer, size, "No assigned loans.\n");
-
     pthread_mutex_unlock(&loans_lock);
     return 0;
 }
 
 int update_loan_status(int custID, const char *status) {
     pthread_mutex_lock(&loans_lock);
-
     FILE *fp = fopen("data/loans.dat", "r");
     FILE *tmp = fopen("data/tmp_loans.dat", "w");
     if (!fp || !tmp) {
@@ -239,9 +306,7 @@ int update_loan_status(int custID, const char *status) {
 
     fclose(fp);
     fclose(tmp);
-    remove("data/loans.dat");
     rename("data/tmp_loans.dat", "data/loans.dat");
-
     pthread_mutex_unlock(&loans_lock);
     return updated ? 0 : -1;
 }
@@ -249,7 +314,6 @@ int update_loan_status(int custID, const char *status) {
 // -------------------- PASSWORD --------------------
 int change_password(int userID, const char *newpwd) {
     pthread_mutex_lock(&users_lock);
-
     FILE *fp = fopen("data/users.dat", "r");
     FILE *tmp = fopen("data/tmp_users.dat", "w");
     if (!fp || !tmp) {
@@ -275,29 +339,28 @@ int change_password(int userID, const char *newpwd) {
 
     fclose(fp);
     fclose(tmp);
-    remove("data/users.dat");
     rename("data/tmp_users.dat", "data/users.dat");
-
     pthread_mutex_unlock(&users_lock);
     return updated ? 0 : -1;
 }
 
+
 // -------------------- FEEDBACK --------------------
 int add_feedback(int custID, const char *feedback) {
     pthread_mutex_lock(&feedback_lock);
-
     FILE *fp = fopen("data/feedback.dat", "a");
-    if (!fp) { pthread_mutex_unlock(&feedback_lock); return -1; }
+    if (!fp) {
+        pthread_mutex_unlock(&feedback_lock);
+        return -1;
+    }
     fprintf(fp, "%d:%s\n", custID, feedback);
     fclose(fp);
-
     pthread_mutex_unlock(&feedback_lock);
     return 0;
 }
 
 int view_feedbacks(char *buffer, size_t size) {
     pthread_mutex_lock(&feedback_lock);
-
     FILE *fp = fopen("data/feedback.dat", "r");
     if (!fp) {
         snprintf(buffer, size, "No feedback records.\n");
@@ -318,16 +381,11 @@ int view_feedbacks(char *buffer, size_t size) {
     fclose(fp);
     if (len == 0)
         snprintf(buffer, size, "No feedback available.\n");
-
     pthread_mutex_unlock(&feedback_lock);
     return 0;
 }
 
 // -------------------- ADD NEW CUSTOMER --------------------
-// Touches users.dat AND accounts.dat. Lock order: users_lock -> accounts_lock.
-// The whole "scan for lastID, then append" sequence is now atomic w.r.t.
-// other threads, which is what actually prevents two concurrent signups
-// from being handed the same customer ID.
 int add_new_customer(const char *password) {
     pthread_mutex_lock(&users_lock);
 
@@ -346,10 +404,16 @@ int add_new_customer(const char *password) {
     int newID = lastID + 1;
 
     FILE *fp = fopen("data/users.dat", "a");
-    if (!fp) { pthread_mutex_unlock(&users_lock); return -1; }
+    if (!fp) {
+        pthread_mutex_unlock(&users_lock);
+        return -1;
+    }
     fprintf(fp, "%d:%s:Customer:active\n", newID, password);
     fclose(fp);
+    pthread_mutex_unlock(&users_lock);
 
+    // Separate lock/file -- ID allocation above is already safe, so
+    // this doesn't need to be inside the users_lock critical section.
     pthread_mutex_lock(&accounts_lock);
     FILE *acc_fp = fopen("data/accounts.dat", "a");
     if (acc_fp) {
@@ -358,14 +422,13 @@ int add_new_customer(const char *password) {
     }
     pthread_mutex_unlock(&accounts_lock);
 
-    pthread_mutex_unlock(&users_lock);
     return newID;
 }
+
 
 // -------------------- MODIFY CUSTOMER PASSWORD --------------------
 int modify_customer_password(int custID, const char *newpwd) {
     pthread_mutex_lock(&users_lock);
-
     FILE *fp = fopen("data/users.dat", "r");
     FILE *tmp = fopen("data/tmp_users.dat", "w");
     if (!fp || !tmp) {
@@ -391,17 +454,15 @@ int modify_customer_password(int custID, const char *newpwd) {
 
     fclose(fp);
     fclose(tmp);
-    remove("data/users.dat");
     rename("data/tmp_users.dat", "data/users.dat");
-
     pthread_mutex_unlock(&users_lock);
     return modified ? 0 : -1;
 }
 
 // -------------------- MANAGER FUNCTIONS --------------------
+
 int toggle_customer_status(int custID, const char *new_status) {
     pthread_mutex_lock(&users_lock);
-
     FILE *fp = fopen("data/users.dat", "r");
     FILE *tmp = fopen("data/tmp_users.dat", "w");
     if (!fp || !tmp) {
@@ -427,16 +488,13 @@ int toggle_customer_status(int custID, const char *new_status) {
 
     fclose(fp);
     fclose(tmp);
-    remove("data/users.dat");
     rename("data/tmp_users.dat", "data/users.dat");
-
     pthread_mutex_unlock(&users_lock);
     return updated ? 0 : -1;
 }
 
 int assign_loan_to_employee(int custID, int empID) {
     pthread_mutex_lock(&loans_lock);
-
     FILE *fp = fopen("data/loans.dat", "r");
     FILE *tmp = fopen("data/tmp_loans.dat", "w");
     if (!fp || !tmp) {
@@ -462,16 +520,16 @@ int assign_loan_to_employee(int custID, int empID) {
 
     fclose(fp);
     fclose(tmp);
-    remove("data/loans.dat");
     rename("data/tmp_loans.dat", "data/loans.dat");
-
     pthread_mutex_unlock(&loans_lock);
     return assigned_flag ? 0 : -1;
 }
 
 // -------------------- VIEW ALL CUSTOMERS --------------------
-// Reads users.dat AND accounts.dat. Lock order: users_lock -> accounts_lock.
 int view_all_customers(char *buffer, size_t size) {
+    // Touches both users.dat and accounts.dat -- lock order is always
+    // users_lock then accounts_lock to match every other function
+    // that could (in principle) need both, so we can never deadlock.
     pthread_mutex_lock(&users_lock);
     pthread_mutex_lock(&accounts_lock);
 
@@ -490,7 +548,7 @@ int view_all_customers(char *buffer, size_t size) {
     double balances[1000];
     int count = 0, id;
     double bal;
-    while (fscanf(fp_acc, "%d:%lf\n", &id, &bal) == 2) {
+    while (count < 1000 && fscanf(fp_acc, "%d:%lf\n", &id, &bal) == 2) {
         ids[count] = id;
         balances[count++] = bal;
     }
@@ -523,18 +581,21 @@ int view_all_customers(char *buffer, size_t size) {
 
     fclose(fp_users);
     fclose(fp_acc);
-
     pthread_mutex_unlock(&accounts_lock);
     pthread_mutex_unlock(&users_lock);
     return 0;
 }
 
 // -------------------- ADMIN FUNCTIONS --------------------
+
 int add_new_employee(const char *password) {
     pthread_mutex_lock(&users_lock);
 
     FILE *fp = fopen("data/users.dat", "r");
-    if (!fp) { pthread_mutex_unlock(&users_lock); return -1; }
+    if (!fp) {
+        pthread_mutex_unlock(&users_lock);
+        return -1;
+    }
 
     int lastID = 2000;
     char fid[32], fpwd[64], frole[32], fstatus[32];
@@ -550,7 +611,10 @@ int add_new_employee(const char *password) {
     int newID = lastID + 1;
 
     fp = fopen("data/users.dat", "a");
-    if (!fp) { pthread_mutex_unlock(&users_lock); return -1; }
+    if (!fp) {
+        pthread_mutex_unlock(&users_lock);
+        return -1;
+    }
     fprintf(fp, "%d:%s:Employee:active\n", newID, password);
     fclose(fp);
 
@@ -560,7 +624,6 @@ int add_new_employee(const char *password) {
 
 int modify_user_details(int userID, const char *newpwd) {
     pthread_mutex_lock(&users_lock);
-
     FILE *fp = fopen("data/users.dat", "r");
     FILE *tmp = fopen("data/tmp_users.dat", "w");
     if (!fp || !tmp) {
@@ -586,16 +649,13 @@ int modify_user_details(int userID, const char *newpwd) {
 
     fclose(fp);
     fclose(tmp);
-    remove("data/users.dat");
     rename("data/tmp_users.dat", "data/users.dat");
-
     pthread_mutex_unlock(&users_lock);
     return updated ? 0 : -1;
 }
 
 int change_user_role(int userID, const char *new_role) {
     pthread_mutex_lock(&users_lock);
-
     FILE *fp = fopen("data/users.dat", "r");
     FILE *tmp = fopen("data/tmp_users.dat", "w");
     if (!fp || !tmp) {
@@ -626,9 +686,7 @@ int change_user_role(int userID, const char *new_role) {
 
     fclose(fp);
     fclose(tmp);
-    remove("data/users.dat");
     rename("data/tmp_users.dat", "data/users.dat");
-
     pthread_mutex_unlock(&users_lock);
     return updated ? 0 : -1;
 }

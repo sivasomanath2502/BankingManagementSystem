@@ -23,28 +23,36 @@ int server_running = 1;
 int server_fd;
 
 // -------------------- SESSION CONTROL --------------------
-int is_user_logged_in(int userID) {
+// Atomically checks whether userID is already logged in, and if not, marks
+// them as logged in -- both steps under ONE lock. Doing this as a single
+// locked step (instead of a separate "check" call followed by a separate
+// "add" call) closes a check-then-act race: without this, two login
+// attempts for the same user arriving at nearly the same moment could both
+// see "not logged in" before either one had registered its session, and
+// both would be let in.
+// Returns 1 if the session was acquired (login should proceed),
+// 0 if the user is already logged in elsewhere (or the session table is full).
+int try_acquire_session(int userID) {
     pthread_mutex_lock(&session_lock);
+
     for (int i = 0; i < MAX_USERS; i++) {
         if (sessions[i].active && sessions[i].userID == userID) {
             pthread_mutex_unlock(&session_lock);
-            return 1;
+            return 0; // already logged in elsewhere
         }
     }
-    pthread_mutex_unlock(&session_lock);
-    return 0;
-}
 
-void add_session(int userID) {
-    pthread_mutex_lock(&session_lock);
     for (int i = 0; i < MAX_USERS; i++) {
         if (!sessions[i].active) {
             sessions[i].active = 1;
             sessions[i].userID = userID;
-            break;
+            pthread_mutex_unlock(&session_lock);
+            return 1; // session acquired
         }
     }
+
     pthread_mutex_unlock(&session_lock);
+    return 0; // no free slot
 }
 
 void remove_session(int userID) {
@@ -107,7 +115,7 @@ void *handle_client(void *arg) {
         write(sock, "Inactive", sizeof("Inactive"));
         close(sock);
         return NULL;
-    } 
+    }
     else if (login_status != 1) {  // Invalid login
         write(sock, "Invalid", sizeof("Invalid"));
         close(sock);
@@ -117,7 +125,7 @@ void *handle_client(void *arg) {
 
     int userID = atoi(id);
 
-    if (is_user_logged_in(userID)) {
+    if (!try_acquire_session(userID)) {
         strcpy(role, "AlreadyLoggedIn");
         write(sock, role, strlen(role) + 1);
         printf("Duplicate login attempt for %d\n", userID);
@@ -125,7 +133,6 @@ void *handle_client(void *arg) {
         return NULL;
     }
 
-    add_session(userID);
     write(sock, role, strlen(role) + 1);
     printf("%s logged in (ID=%d)\n", role, userID);
 
@@ -151,14 +158,15 @@ void *handle_client(void *arg) {
                 }
                 case 3: { // Withdraw
                     read(sock, &amount, sizeof(amount));
-                    double bal;
-                    view_balance(userID, &bal);
-                    if (amount > bal)
-                        write(sock, "Insufficient balance.", strlen("Insufficient balance.") + 1);
-                    else {
-                        update_balance(userID, amount, 0);
+                    double new_bal;
+                    int res = debit_if_sufficient(userID, amount, &new_bal);
+                    if (res == 0) {
                         record_transaction(userID, "Withdraw", amount);
                         write(sock, "Withdrawal successful.", strlen("Withdrawal successful.") + 1);
+                    } else if (res == -1) {
+                        write(sock, "Insufficient balance.", strlen("Insufficient balance.") + 1);
+                    } else {
+                        write(sock, "Account not found.", strlen("Account not found.") + 1);
                     }
                     break;
                 }
@@ -166,37 +174,20 @@ void *handle_client(void *arg) {
                     int target;
                     read(sock, &target, sizeof(target));
                     read(sock, &amount, sizeof(amount));
-
-                    double bal;
-                    if (view_balance(userID, &bal) != 0) {
-                        write(sock, "Source account not found.", 26);
-                        break;
+                    double new_bal;
+                    int res = debit_if_sufficient(userID, amount, &new_bal);
+                    if (res == 0) {
+                        update_balance(target, amount, 1);
+                        record_transaction(userID, "TransferOut", amount);
+                        record_transaction(target, "TransferIn", amount);
+                        write(sock, "Transfer successful.", strlen("Transfer successful.") + 1);
+                    } else if (res == -1) {
+                        write(sock, "Insufficient balance.", strlen("Insufficient balance.") + 1);
+                    } else {
+                        write(sock, "Account not found.", strlen("Account not found.") + 1);
                     }
-
-                    // Check if target exists
-                    double target_bal;
-                    if (view_balance(target, &target_bal) != 0) {
-                        write(sock, "Target customer does not exist.", 32);
-                        break;
-                    }
-
-                    // Check for sufficient funds
-                    if (amount > bal) {
-                        write(sock, "Insufficient balance.", 22);
-                        break;
-                    }
-
-                    // Perform transfer safely
-                    update_balance(userID, amount, 0);
-                    update_balance(target, amount, 1);
-                    record_transaction(userID, "TransferOut", amount);
-                    record_transaction(target, "TransferIn", amount);
-
-                    write(sock, "Transfer successful.", 21);
                     break;
                 }
-
-
                 case 5: { // Loan
                     read(sock, &amount, sizeof(amount));
                     apply_loan(userID, amount);
@@ -239,7 +230,7 @@ void *handle_client(void *arg) {
     else if (strcmp(role, "Employee") == 0) {
         while (read(sock, &choice, sizeof(choice)) > 0) {
             switch (choice) {
-                case 1: { // Add New Customer
+                case 1: {
                     char password[64];
                     read(sock, password, sizeof(password));
                     int newID = add_new_customer(password);
@@ -249,7 +240,7 @@ void *handle_client(void *arg) {
                     write(sock, buf, strlen(buf) + 1);
                     break;
                 }
-                case 2: { // Modify Customer Password
+                case 2: {
                     int custID;
                     char newpwd[64];
                     read(sock, &custID, sizeof(custID));
@@ -282,7 +273,7 @@ void *handle_client(void *arg) {
                     write(sock, buf, strlen(buf) + 1);
                     break;
                 }
-                case 6: { // Change Password
+                case 6: {
                     char newpwd[64];
                     read(sock, newpwd, sizeof(newpwd));
                     int res = change_password(userID, newpwd);
@@ -359,7 +350,7 @@ void *handle_client(void *arg) {
     else if (strcmp(role, "Admin") == 0) {
         while (read(sock, &choice, sizeof(choice)) > 0) {
             switch (choice) {
-                case 1: { // Add new employee
+                case 1: {
                     char password[64];
                     read(sock, password, sizeof(password));
                     int newID = add_new_employee(password);
@@ -370,7 +361,7 @@ void *handle_client(void *arg) {
                     write(sock, buf, strlen(buf) + 1);
                     break;
                 }
-                case 2: { // Modify any user password
+                case 2: {
                     int uid;
                     char newpwd[64];
                     read(sock, &uid, sizeof(uid));
@@ -381,7 +372,7 @@ void *handle_client(void *arg) {
                     write(sock, buf, strlen(buf) + 1);
                     break;
                 }
-                case 3: { // Change user role
+                case 3: {
                     int uid;
                     char newrole[32];
                     read(sock, &uid, sizeof(uid));
@@ -389,9 +380,8 @@ void *handle_client(void *arg) {
 
                     int res = change_user_role(uid, newrole);
 
-                    // Prepare message for client
                     if (res == 0) {
-                        snprintf(buf, sizeof(buf), "Role updated for user %d → %s.", uid, newrole);
+                        snprintf(buf, sizeof(buf), "Role updated for user %d -> %s.", uid, newrole);
                     } else {
                         snprintf(buf, sizeof(buf),
                                 "Role change failed. Only Employee <-> Manager transitions allowed.");
@@ -401,7 +391,7 @@ void *handle_client(void *arg) {
                     break;
                 }
 
-                case 4: { // Change Admin password
+                case 4: {
                     char newpwd[64];
                     read(sock, newpwd, sizeof(newpwd));
                     int res = change_password(userID, newpwd);
